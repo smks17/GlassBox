@@ -104,6 +104,11 @@ func (f *VFS) SetIdentity(id user.Identity) { f.id = id }
 
 func (f *VFS) Identity() user.Identity { return f.id }
 
+func (f *VFS) Fork() filesystem.FS {
+	child := *f
+	return &child
+}
+
 func (f *VFS) RootUser() (user.Identity, error) { return f.db.Root() } //TODO: Delete later
 
 func (f *VFS) User() string { return f.id.Name }
