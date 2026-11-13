@@ -332,7 +332,6 @@ func (sh *Shell) runPipeline(pipeline *Pipeline, fds *stream.FDTable) int {
 
 			child := sh.sub()
 			child.pipes = ends
-			child.fs = newDirView(sh.fs) // a stage is a subshell: its cd stays in it
 			stages.Add(1)
 			go func() {
 				defer stages.Done()
@@ -365,6 +364,9 @@ func (sh *Shell) runPipeline(pipeline *Pipeline, fds *stream.FDTable) int {
 
 func (sh *Shell) sub() *Shell {
 	child := *sh
+	child.fs = newDirView(sh.fs)
+	// A subshell cannot change the owning session's authentication state.
+	child.SwitchUser = nil
 	child.vars = maps.Clone(sh.vars)
 	child.funcs = maps.Clone(sh.funcs)
 	child.params = slices.Clone(sh.params)
@@ -502,6 +504,10 @@ func (sh *Shell) setStatus(status int) int {
 
 func (sh *Shell) builtin(name string, args []string, fds *stream.FDTable) (int, bool) {
 	switch name {
+	case "cd":
+		return (commands.Cd{}).Run(sh.context(fds), args), true
+	case "su":
+		return (commands.Su{}).Run(sh.context(fds), args), true
 	case ":":
 		return 0, true
 	case "exit":

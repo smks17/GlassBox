@@ -17,11 +17,13 @@ type dirView struct {
 }
 
 func newDirView(fs filesystem.FS) *dirView {
-	if view, ok := fs.(*dirView); ok && view.cwd != nil {
-		cwd := *view.cwd
-		return &dirView{FS: view.FS, cwd: &cwd}
-	}
 	cwd := fs.Cwd()
+	if view, ok := fs.(*dirView); ok && view.cwd != nil {
+		fs = view.FS
+	}
+	if forker, ok := fs.(interface{ Fork() filesystem.FS }); ok {
+		fs = forker.Fork()
+	}
 	return &dirView{FS: fs, cwd: &cwd}
 }
 

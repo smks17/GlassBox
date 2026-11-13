@@ -114,6 +114,7 @@ func (sh *Shell) runProcess(cmd commands.Command, name string, args []string, fd
 		// A copy, so the command sees p as its process. It is taken here, on
 		// the shell's goroutine, since the shell goes on changing after Spawn.
 		child := *sh
+		child.fs = newDirView(sh.fs)
 		spec := proc.Spec{
 			Parent: sh.proc, User: sh.fs.Identity(), Name: name, Args: args,
 			Run: func(p *proc.Process) int {
@@ -167,7 +168,6 @@ func (sh *Shell) runBackground(cmd Cmd, fds *stream.FDTable) int {
 	j := sh.newJob(sh.nextJobID(), false)
 	child := sh.sub()
 	child.job, child.ctx = j, context.Background()
-	child.fs = newDirView(sh.fs) // a cd inside it must not move the shell
 	sh.jobs = append(sh.jobs, j)
 	go func() { j.finish(child.runCmd(cmd, fds)) }()
 
