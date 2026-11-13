@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"parrot/internal/engine/proc"
+	"glass/internal/engine/proc"
 )
 
 type Sleep struct{}

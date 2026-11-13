@@ -7,8 +7,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"parrot/internal/engine/clock"
-	"parrot/internal/engine/filesystem"
+	"glass/internal/engine/clock"
+	"glass/internal/engine/filesystem"
 )
 
 type Ls struct{}

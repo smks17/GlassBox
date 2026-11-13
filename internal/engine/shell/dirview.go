@@ -4,8 +4,8 @@ import (
 	"path"
 	"strings"
 
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/stream"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/stream"
 )
 
 // dirView is the filesystem as one running command sees it, and it carries two

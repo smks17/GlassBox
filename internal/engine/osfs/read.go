@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/stream"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/stream"
 )
 
 func (f *FS) Stat(path string) (filesystem.Info, error) {

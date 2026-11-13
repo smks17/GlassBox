@@ -2,8 +2,8 @@ package commands
 
 import (
 	"fmt"
-	"parrot/internal/engine/clock"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/clock"
+	"glass/internal/engine/user"
 	"strconv"
 	"strings"
 	"time"

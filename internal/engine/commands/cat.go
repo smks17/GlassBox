@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"parrot/internal/engine/signal"
+	"glass/internal/engine/signal"
 )
 
 type Cat struct{}

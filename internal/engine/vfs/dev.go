@@ -1,8 +1,8 @@
 package vfs
 
 import (
-	"parrot/internal/engine/dev"
-	"parrot/internal/engine/filesystem"
+	"glass/internal/engine/dev"
+	"glass/internal/engine/filesystem"
 )
 
 const (

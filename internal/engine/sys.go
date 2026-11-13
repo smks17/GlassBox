@@ -3,9 +3,9 @@ package engine
 import (
 	"path"
 
-	"parrot/internal/engine/dev"
-	"parrot/internal/engine/network"
-	"parrot/internal/engine/vfs"
+	"glass/internal/engine/dev"
+	"glass/internal/engine/network"
+	"glass/internal/engine/vfs"
 )
 
 const sysClassNet = "/sys/class/net"
