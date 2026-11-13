@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"parrot/internal/engine/clock"
-	"parrot/internal/engine/commands"
-	"parrot/internal/engine/vfs"
+	"glass/internal/engine/clock"
+	"glass/internal/engine/commands"
+	"glass/internal/engine/vfs"
 )
 
 // TODO: Implement this

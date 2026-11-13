@@ -3,7 +3,7 @@ package filesystem
 import (
 	"errors"
 
-	"parrot/internal/engine/stream"
+	"glass/internal/engine/stream"
 )
 
 var (

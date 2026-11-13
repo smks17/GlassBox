@@ -3,9 +3,9 @@ package network
 import (
 	"context"
 	"errors"
+	"glass/internal/engine/filesystem"
 	"io"
 	"net/netip"
-	"parrot/internal/engine/filesystem"
 	"slices"
 	"sync"
 )

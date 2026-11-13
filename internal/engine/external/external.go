@@ -14,7 +14,7 @@ import (
 	"os/exec"
 	"sort"
 
-	"parrot/internal/engine/commands"
+	"glass/internal/engine/commands"
 )
 
 // Lookup finds a program on PATH. It is handed to the engine as the last

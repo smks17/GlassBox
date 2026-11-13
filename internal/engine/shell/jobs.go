@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"parrot/internal/engine/commands"
-	"parrot/internal/engine/proc"
-	"parrot/internal/engine/stream"
+	"glass/internal/engine/commands"
+	"glass/internal/engine/proc"
+	"glass/internal/engine/stream"
 )
 
 // A job is what one command line, or one "&", runs.
@@ -297,7 +297,7 @@ func (sh *Shell) fgBuiltin(args []string, fds *stream.FDTable) int {
 	}
 	j, err := sh.findJob(jobReference)
 	if err != nil {
-		fmt.Fprintf(fds.Stderr(), "prt: fg: %v\n", err)
+		fmt.Fprintf(fds.Stderr(), "glass: fg: %v\n", err)
 		return 1
 	}
 	fmt.Fprintln(fds.Stdout(), j.text())
@@ -330,11 +330,11 @@ func (sh *Shell) bgBuiltin(args []string, fds *stream.FDTable) int {
 	}
 	j, err := sh.findJob(jobReference)
 	if err != nil {
-		fmt.Fprintf(fds.Stderr(), "prt: bg: %v\n", err)
+		fmt.Fprintf(fds.Stderr(), "glass: bg: %v\n", err)
 		return 1
 	}
 	if j.ended.Err() != nil {
-		fmt.Fprintf(fds.Stderr(), "prt: bg: job %d has already completed\n", j.id)
+		fmt.Fprintf(fds.Stderr(), "glass: bg: job %d has already completed\n", j.id)
 		return 1
 	}
 	j.Kill(nil, proc.SIGCONT)
@@ -357,7 +357,7 @@ func (sh *Shell) waitBuiltin(args []string, fds *stream.FDTable) int {
 	for _, arg := range args {
 		j, err := sh.findJob(arg)
 		if err != nil {
-			fmt.Fprintf(fds.Stderr(), "prt: wait: %v\n", err)
+			fmt.Fprintf(fds.Stderr(), "glass: wait: %v\n", err)
 			return 127
 		}
 		if !sh.waitJob(j) {

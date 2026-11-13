@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"io"
 
-	"parrot/internal/engine/stream"
+	"glass/internal/engine/stream"
 )
 
 // Generated is a file whose content is made when it is opened, the way sysfs

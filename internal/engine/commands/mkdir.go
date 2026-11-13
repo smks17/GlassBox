@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/signal"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/signal"
 )
 
 type Mkdir struct{}

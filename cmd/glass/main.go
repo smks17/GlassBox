@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"parrot/internal/engine"
-	"parrot/internal/engine/hostnet"
-	"parrot/internal/engine/osfs"
+	"glass/internal/engine"
+	"glass/internal/engine/hostnet"
+	"glass/internal/engine/osfs"
 )
 
 func main() {
