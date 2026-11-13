@@ -40,6 +40,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", engine.ShellName, err)
 		os.Exit(1)
 	}
+	app.SetMachine(hostMachine())
 	if err := loads.into(app); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", engine.ShellName, err)
 		os.Exit(1)

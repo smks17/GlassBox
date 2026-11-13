@@ -28,6 +28,9 @@ func fail(app *engine.App, message string) map[string]any {
 func main() {
 	js.Global().Set("__engineReady", js.ValueOf(true))
 	var app = engine.NewApp()
+	if machine := js.Global().Get("__hostMachine"); machine.Type() == js.TypeString {
+		app.SetMachine(machine.String())
+	}
 	// TODO(stream-io): the engine can already stream output and be cancelled,
 	// but nothing here uses it yet. To connect it:
 	//   - app.SetYield with a function that parks on a MessageChannel, so a

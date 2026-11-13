@@ -31,6 +31,8 @@ type HistoryEntry struct {
 type Context struct {
 	Ctx context.Context
 	VFS filesystem.FS
+	// Machine is host architecture metadata captured by the adapter at startup.
+	Machine string
 
 	// Fds is the process's descriptor table. Stdin, Stdout and Stderr
 	Fds *stream.FDTable

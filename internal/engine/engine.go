@@ -25,6 +25,14 @@ type App struct {
 	tick       func()
 	background output
 	network    *network.NetworkManager
+	machine    string
+}
+
+// SetMachine supplies startup metadata before commands run. It belongs to the
+// receiving host, so restoring a snapshot must not replace it.
+func (app *App) SetMachine(machine string) {
+	app.machine = machine
+	app.session.shell.Machine = machine
 }
 
 func NewApp() *App {
@@ -86,6 +94,7 @@ func (app *App) Restore(data []byte) error {
 	session.shell.SetYield(app.tick)
 	session.shell.Network = app.network
 	session.background = app.background
+	session.shell.Machine = app.machine
 	session.setOutput(app.background.out, app.background.errOut)
 	// The old session's jobs have nowhere to write now, so close them. The new session's jobs will write to the new background.
 	app.session.stdout.Close()

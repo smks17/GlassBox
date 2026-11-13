@@ -1,3 +1,5 @@
+import { detectHostMachine, type ArchitectureSource } from "./host-machine";
+
 export interface ExecResult {
   stdout: string;
   stderr: string;
@@ -15,6 +17,7 @@ declare global {
     snapshot?: () => Uint8Array | null;
     loadSession?: (data: Uint8Array) => boolean;
     __engineReady?: boolean;
+    __hostMachine?: string;
   }
 }
 
@@ -28,13 +31,19 @@ let readyPromise: Promise<void> | null = null;
 export function loadEngine(): Promise<void> {
   if (readyPromise) return readyPromise;
 
+  const source = (navigator as Navigator & {
+    userAgentData?: ArchitectureSource;
+  }).userAgentData;
+  const machinePromise = detectHostMachine(source);
+
   readyPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = "/wasm_exec.js";
     script.onload = () => {
       const go = new Go();
       WebAssembly.instantiateStreaming(fetch("/engine.wasm"), go.importObject)
-        .then((result) => {
+        .then(async (result) => {
+          window.__hostMachine = await machinePromise;
           void go.run(result.instance);
           const deadline = Date.now() + 5000;
           const check = () => {

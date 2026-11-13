@@ -11,7 +11,7 @@ var _ Command = Uname{}
 
 func (Uname) Name() string { return "uname" }
 func (Uname) Usage() string {
-	return "uname [-asnrvmo] [--] — print static simulated system information"
+	return "uname [-asnrvmo] [--] — print simulated system information and cached host architecture"
 }
 
 func (Uname) Run(ctx *Context, args []string) int {
@@ -46,13 +46,17 @@ func (Uname) Run(ctx *Context, args []string) int {
 	if len(selected) == 0 {
 		selected['s'] = true
 	}
-	// These values describe the simulated machine independently of its host.
+	machine := ctx.Machine
+	if machine == "" {
+		machine = "unknown"
+	}
+	// Only the machine architecture comes from cached adapter metadata.
 	fields := []struct {
 		option rune
 		value  string
 	}{
-		{'s', "glassBox"}, {'n', "glass"}, {'r', "0.1.0"},
-		{'v', "virtual"}, {'m', "virtual"}, {'o', "glassBox"},
+		{'s', "GlassBox"}, {'n', "glass"}, {'r', "0.1.0-glass"},
+		{'v', "0.1.0-glass"}, {'m', machine}, {'o', "GNU/Linux"},
 	}
 	var values []string
 	for _, field := range fields {

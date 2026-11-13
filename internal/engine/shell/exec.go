@@ -62,6 +62,7 @@ type Shell struct {
 	// Network is the machine's network, handed to every command. The engine
 	// sets it; a shell without one gives its commands none.
 	Network *network.NetworkManager
+	Machine string
 }
 
 type control int
@@ -407,6 +408,7 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 	return &commands.Context{
 		Ctx:             sh.ctx,
 		VFS:             viewFor(sh.fs, fds),
+		Machine:         sh.Machine,
 		Fds:             fds,
 		Stdin:           guard.WrapReader(fds.Stdin()),
 		Stdout:          guard.WrapWriter(fds.Stdout()),
