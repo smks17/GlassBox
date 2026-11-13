@@ -10,6 +10,7 @@ import (
 	"parrot/internal/engine/proc"
 	"parrot/internal/engine/stream"
 	"parrot/internal/engine/user"
+	"parrot/internal/engine/wasi"
 	"slices"
 	"strings"
 	"time"
@@ -53,6 +54,9 @@ type Context struct {
 	JobProcessGroup func(jobReference string) (proc.PID, error)
 
 	Network *network.NetworkManager
+
+	// WasiCache keeps compiled WebAssembly programs between runs, or is nil.
+	WasiCache wasi.Cache
 }
 
 // NewSocket is socket(2) for this command: the socket belongs to its process

@@ -8,12 +8,16 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"parrot/internal/engine"
 	"parrot/internal/engine/hostnet"
 	"parrot/internal/engine/osfs"
+	"parrot/internal/engine/wasi"
+
+	"github.com/tetratelabs/wazero"
 )
 
 func main() {
@@ -40,9 +44,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", engine.ShellName, err)
 		os.Exit(1)
 	}
+	if !*onDisk {
+		if err := installToolchain(app); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: installing the toolchain: %v\n", engine.ShellName, err)
+			os.Exit(1)
+		}
+	}
 	if err := loads.into(app); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", engine.ShellName, err)
 		os.Exit(1)
+	}
+	if cache, err := wasiCache(); err != nil {
+		// Programs still run without it, only slower to start.
+		fmt.Fprintf(os.Stderr, "%s: no cache for compiled programs: %v\n", engine.ShellName, err)
+	} else {
+		app.SetWasiCache(cache)
 	}
 	app.SetBackgroundOutput(os.Stdout, os.Stderr)
 
@@ -80,6 +96,13 @@ func (l loadList) into(app *engine.App) error {
 		}
 	}
 	return nil
+}
+func wasiCache() (wasi.Cache, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	return wazero.NewCompilationCacheWithDir(filepath.Join(dir, "parrot", "wasi"))
 }
 
 func usage() {

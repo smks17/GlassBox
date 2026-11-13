@@ -16,6 +16,7 @@ import (
 	"parrot/internal/engine/stream"
 	"parrot/internal/engine/user"
 	"parrot/internal/engine/vfs"
+	"parrot/internal/engine/wasi"
 )
 
 const ShellName = "prt"
@@ -25,6 +26,7 @@ type App struct {
 	tick       func()
 	background output
 	network    *network.NetworkManager
+	wasiCache  wasi.Cache
 }
 
 func NewApp() *App {
@@ -39,6 +41,11 @@ func newNetwork(fs *filesystem.FS) *network.NetworkManager {
 	nm := network.NewNetworkManager(context.Background(), fs)
 	nm.Start()
 	return nm
+}
+
+func (app *App) SetWasiCache(cache wasi.Cache) {
+	app.wasiCache = cache
+	app.session.shell.WasiCache = cache
 }
 
 // Network is the machine's network, for the host to plug interfaces into.
@@ -86,6 +93,7 @@ func (app *App) Restore(data []byte) error {
 	session.shell.SetYield(app.tick)
 	session.shell.Network = app.network
 	session.background = app.background
+	session.shell.WasiCache = app.wasiCache
 	session.setOutput(app.background.out, app.background.errOut)
 	// The old session's jobs have nowhere to write now, so close them. The new session's jobs will write to the new background.
 	app.session.stdout.Close()
