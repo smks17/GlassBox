@@ -1,10 +1,10 @@
 {
-  "name": "parrot-backend",
+  "name": "glass-backend",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "migrate": "wrangler d1 migrations apply parrot"
+    "migrate": "wrangler d1 migrations apply DB"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",

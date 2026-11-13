@@ -51,8 +51,8 @@ func (Uname) Run(ctx *Context, args []string) int {
 		option rune
 		value  string
 	}{
-		{'s', "Parrot"}, {'n', "parrot"}, {'r', "0.1.0"},
-		{'v', "virtual"}, {'m', "virtual"}, {'o', "Parrot"},
+		{'s', "glassBox"}, {'n', "glass"}, {'r', "0.1.0"},
+		{'v', "virtual"}, {'m', "virtual"}, {'o', "glassBox"},
 	}
 	var values []string
 	for _, field := range fields {

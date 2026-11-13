@@ -1,8 +1,8 @@
 package filesystem
 
 import (
-	"parrot/internal/engine/stream"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/stream"
+	"glass/internal/engine/user"
 )
 
 // FS is everything a command needs from a filesystem.

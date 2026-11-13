@@ -3,7 +3,7 @@ package filesystem
 import (
 	"time"
 
-	"parrot/internal/engine/user"
+	"glass/internal/engine/user"
 )
 
 // Info describes one entry: the same fields "ls -l" prints. It is what a

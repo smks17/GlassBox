@@ -10,7 +10,7 @@ import (
 	"sync"
 	"syscall"
 
-	"parrot/internal/engine/user"
+	"glass/internal/engine/user"
 )
 
 // current asks the system who is running the shell, and what groups they are

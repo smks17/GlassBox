@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/signal"
-	"parrot/internal/engine/user"
-	"parrot/internal/engine/vfs"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/signal"
+	"glass/internal/engine/user"
+	"glass/internal/engine/vfs"
 )
 
 func identityCommandContext(t *testing.T) (*Context, *vfs.VFS, *bytes.Buffer, *bytes.Buffer) {

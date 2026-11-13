@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Rebuilds and deploys Parrot end to end: WASM engine, Cloudflare Worker
+# Rebuilds and deploys glassBox end to end: WASM engine, Cloudflare Worker
 # (backend), then the static Next.js frontend to Cloudflare Pages.
 #
 # Requires: Go toolchain, Node 22+, and `npx wrangler login` already done.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PAGES_PROJECT="${PAGES_PROJECT:-parrot}"
-WORKER_NAME="${WORKER_NAME:-parrot-api}"
+PAGES_PROJECT="${PAGES_PROJECT:-glass}"
+WORKER_NAME="${WORKER_NAME:-glass-api}"
 
 echo "== 1/4  Building engine.wasm =="
 cd "$ROOT"

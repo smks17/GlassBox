@@ -7,11 +7,11 @@ func TestUnameVirtualIdentity(t *testing.T) {
 		args []string
 		want string
 	}{
-		{nil, "Parrot\n"}, {[]string{"-a"}, "Parrot parrot 0.1.0 virtual virtual Parrot\n"},
-		{[]string{"-o"}, "Parrot\n"}, {[]string{"-n"}, "parrot\n"},
+		{nil, "glassBox\n"}, {[]string{"-a"}, "glassBox glass 0.1.0 virtual virtual glassBox\n"},
+		{[]string{"-o"}, "glassBox\n"}, {[]string{"-n"}, "glass\n"},
 		{[]string{"-r"}, "0.1.0\n"}, {[]string{"-v"}, "virtual\n"}, {[]string{"-m"}, "virtual\n"},
-		{[]string{"-onmsrvs"}, "Parrot parrot 0.1.0 virtual virtual Parrot\n"},
-		{[]string{"-mn", "-s", "--"}, "Parrot parrot virtual\n"}, {[]string{"--"}, "Parrot\n"},
+		{[]string{"-onmsrvs"}, "glassBox glass 0.1.0 virtual virtual glassBox\n"},
+		{[]string{"-mn", "-s", "--"}, "glassBox glass virtual\n"}, {[]string{"--"}, "glassBox\n"},
 	} {
 		ctx, _, out, diagnostic := identityCommandContext(t)
 		if code := identityCommand(t, "uname").Run(ctx, test.args); code != 0 || out.String() != test.want || diagnostic.Len() != 0 {

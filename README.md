@@ -1,4 +1,4 @@
-# Parrot
+# glassBox
 
 A virtual Linux environment that runs in the browser and CLI. It is a simulation, not a real operating system: the shell, filesystem, users, pipes and processes are all written in Go.
 
@@ -18,10 +18,10 @@ A virtual Linux environment that runs in the browser and CLI. It is a simulation
 You need Go 1.25 or newer.
 
 ```sh
-go run ./cmd/prt                 # an in-memory machine
-go run ./cmd/prt -real           # the same shell on your real disk
-go run ./cmd/prt script.sh a b   # run a script with arguments
-go run ./cmd/prt --help          # see usage
+go run ./cmd/glass               # an in-memory machine
+go run ./cmd/glass -real         # the same shell on your real disk
+go run ./cmd/glass script.sh a b   # run a script with arguments
+go run ./cmd/glass --help          # see usage
 ```
 
 ### In the browser
@@ -50,7 +50,7 @@ gofmt -l .                                             # must print nothing
 ```text
 web/          Next.js terminal (presentation only)
 cmd/wasm      thin browser adapter
-cmd/prt       native command line
+cmd/glass     native command line
 internal/engine/
   shell/      lexer, parser, executor, jobs
   commands/   one file per command
@@ -68,7 +68,7 @@ The rule that shapes everything: the engine must never use the host operating sy
 
 ## TODO
 - [ ] Add command snapshot inside cli like browser
-- [ ] Run wasm program inside the parrot
+- [ ] Run wasm program inside glassBox
 - [ ] Add package and plugin manager
 - [ ] Complete remain engine features inside frontend
 - [ ] Rewrite backend with Python or Go

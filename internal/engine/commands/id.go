@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"parrot/internal/engine/signal"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/signal"
+	"glass/internal/engine/user"
 )
 
 type Id struct{}
