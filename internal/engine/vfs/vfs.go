@@ -4,10 +4,10 @@ import (
 	"errors"
 	"strings"
 
-	"parrot/internal/engine/dev"
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/stream"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/dev"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/stream"
+	"glass/internal/engine/user"
 )
 
 var _ filesystem.FS = (*VFS)(nil)
@@ -103,6 +103,11 @@ func (f *VFS) UsersDB() *user.DB { return f.db }
 func (f *VFS) SetIdentity(id user.Identity) { f.id = id }
 
 func (f *VFS) Identity() user.Identity { return f.id }
+
+func (f *VFS) Fork() filesystem.FS {
+	child := *f
+	return &child
+}
 
 func (f *VFS) RootUser() (user.Identity, error) { return f.db.Root() } //TODO: Delete later
 

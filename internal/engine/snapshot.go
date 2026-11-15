@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"parrot/internal/engine/clock"
-	"parrot/internal/engine/commands"
-	"parrot/internal/engine/vfs"
+	"glass/internal/engine/clock"
+	"glass/internal/engine/commands"
+	"glass/internal/engine/vfs"
 )
 
 // TODO: Implement this
@@ -77,13 +77,16 @@ func LoadSession(data []byte) (*Session, error) {
 	if err := json.Unmarshal(data, &snap); err != nil {
 		return nil, err
 	}
+	root, err := snap.Root.ToInode()
+	if err != nil {
+		return nil, err
+	}
+	session := newSession(vfs.FromRoot(root, snap.Cwd))
 
 	clock.SetOffset(time.Duration(snap.Clock))
 	if snap.Zone != "" {
 		clock.SetLocal(snap.Zone, snap.ZoneOffset)
 	}
-
-	session := newSession(vfs.FromRoot(snap.Root.ToInode(), snap.Cwd))
 
 	if snap.User != "" {
 		session.SetUser(snap.User)

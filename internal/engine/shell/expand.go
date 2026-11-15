@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"parrot/internal/engine/stream"
+	"glass/internal/engine/stream"
 )
 
 // fields collects the strings a word expands to. One is being built at any
@@ -195,7 +195,7 @@ func (sh *Shell) variable(name string) string {
 	case "@", "*":
 		return strings.Join(sh.params, " ")
 	case "0":
-		return "prt"
+		return "glass"
 	case "$":
 		return strconv.Itoa(int(sh.pid))
 	case "!":

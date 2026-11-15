@@ -6,10 +6,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"parrot/internal/engine/clock"
-	"parrot/internal/engine/dev"
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/clock"
+	"glass/internal/engine/dev"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/user"
 )
 
 const (

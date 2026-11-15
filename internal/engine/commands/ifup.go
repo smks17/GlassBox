@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"parrot/internal/engine/network"
+	"glass/internal/engine/network"
 )
 
 type Ifup struct{}

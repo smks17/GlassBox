@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"parrot/internal/engine/proc"
+	"glass/internal/engine/proc"
 )
 
 type Kill struct{}

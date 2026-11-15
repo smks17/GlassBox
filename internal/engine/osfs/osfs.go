@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/user"
 )
 
 type FS struct {

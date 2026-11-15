@@ -7,19 +7,19 @@ import (
 	"io"
 	"strings"
 
-	"parrot/internal/engine/clock"
-	"parrot/internal/engine/commands"
-	"parrot/internal/engine/dev"
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/network"
-	"parrot/internal/engine/shell"
-	"parrot/internal/engine/stream"
-	"parrot/internal/engine/user"
-	"parrot/internal/engine/vfs"
-	"parrot/internal/engine/wasi"
+	"glass/internal/engine/clock"
+	"glass/internal/engine/commands"
+	"glass/internal/engine/dev"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/network"
+	"glass/internal/engine/shell"
+	"glass/internal/engine/stream"
+	"glass/internal/engine/user"
+	"glass/internal/engine/vfs"
+	"glass/internal/engine/wasi"
 )
 
-const ShellName = "prt"
+const ShellName = "glass"
 
 type App struct {
 	session    *Session

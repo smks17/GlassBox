@@ -8,7 +8,7 @@ import (
 	"net/netip"
 	"strings"
 
-	"parrot/internal/engine/filesystem"
+	"glass/internal/engine/filesystem"
 )
 
 // Resolver is the upstream DNS lookup. *net.Resolver satisfies it.

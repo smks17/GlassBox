@@ -1,6 +1,6 @@
 package dev
 
-import "parrot/internal/engine/stream"
+import "glass/internal/engine/stream"
 
 type Descriptor struct {
 	fd int

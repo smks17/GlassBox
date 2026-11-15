@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"parrot/internal/engine/clock"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/clock"
+	"glass/internal/engine/user"
 )
 
 const (

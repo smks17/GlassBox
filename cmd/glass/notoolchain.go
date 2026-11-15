@@ -2,7 +2,7 @@
 
 package main
 
-import "parrot/internal/engine"
+import "glass/internal/engine"
 
 // installToolchain has nothing to install in a build without -tags
 // toolchain; see toolchain.go.

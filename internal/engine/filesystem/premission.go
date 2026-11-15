@@ -1,6 +1,6 @@
 package filesystem
 
-import "parrot/internal/engine/user"
+import "glass/internal/engine/user"
 
 // FileMode holds the nine permission bits as a Unix-style octal value.
 // 0644 == rw-r--r--, 0755 == rwxr-xr-x.

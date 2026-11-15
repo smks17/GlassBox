@@ -5,7 +5,7 @@ import (
 	"net/netip"
 	"sync"
 
-	"parrot/internal/engine/stream"
+	"glass/internal/engine/stream"
 )
 
 type Socket struct {

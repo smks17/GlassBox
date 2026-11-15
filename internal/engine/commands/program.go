@@ -6,7 +6,7 @@ import (
 	"path"
 	"strings"
 
-	"parrot/internal/engine/wasi"
+	"glass/internal/engine/wasi"
 )
 
 type Program struct{}

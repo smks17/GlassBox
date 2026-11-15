@@ -1,8 +1,8 @@
 package dev
 
 import (
+	"glass/internal/engine/stream"
 	"io"
-	"parrot/internal/engine/stream"
 )
 
 // Terminal is /dev/tty

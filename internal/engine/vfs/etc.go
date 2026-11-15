@@ -3,9 +3,9 @@ package vfs
 import (
 	"path"
 
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/network"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/network"
+	"glass/internal/engine/user"
 )
 
 func seedEtc(root *Inode) {

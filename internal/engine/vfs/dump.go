@@ -1,9 +1,11 @@
 package vfs
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
-	"parrot/internal/engine/filesystem"
+	"glass/internal/engine/filesystem"
 )
 
 type DumpNode struct {
@@ -20,6 +22,11 @@ type DumpNode struct {
 
 	Ino uint64 `json:"ino,omitempty"`
 }
+
+const (
+	maxRestoreNodes = 100000
+	maxRestoreDepth = 256
+)
 
 func (node *Inode) Dump(name string) *DumpNode {
 	return node.dump(name, map[Ino]bool{})
@@ -52,16 +59,25 @@ func (node *Inode) dump(name string, written map[Ino]bool) *DumpNode {
 	return d
 }
 
-func (d *DumpNode) ToInode() *Inode {
-	return d.toInode(map[uint64]*Inode{}, true)
+func (d *DumpNode) ToInode() (*Inode, error) {
+	remaining := maxRestoreNodes
+	return d.toInode(map[uint64]*Inode{}, true, 0, &remaining)
 }
 
-func (d *DumpNode) toInode(byIno map[uint64]*Inode, isRoot bool) *Inode {
+func (d *DumpNode) toInode(byIno map[uint64]*Inode, isRoot bool, depth int, remaining *int) (*Inode, error) {
+	if d == nil || depth > maxRestoreDepth || *remaining == 0 {
+		return nil, fmt.Errorf("snapshot tree is missing or exceeds restore limits: %w", filesystem.ErrInvalid)
+	}
+	*remaining -= 1
 	if d.Ino != 0 {
 		if linked, ok := byIno[d.Ino]; ok {
-			return linked // a second name for an inode already rebuilt
+			// Only regular files may have additional names. An alias carries
+			// no second definition of the inode's metadata or contents.
+			if linked.IsDir() || d.Mode != nil || d.Owner != "" || d.Group != "" || d.Mtime != 0 || len(d.Content) != 0 || len(d.Children) != 0 {
+				return nil, fmt.Errorf("snapshot inode %d has an invalid alias: %w", d.Ino, filesystem.ErrInvalid)
+			}
+			return linked, nil
 		}
-		reserveIno(Ino(d.Ino))
 	}
 
 	owner := Ownership{User: d.Owner, Group: d.Group}
@@ -69,8 +85,14 @@ func (d *DumpNode) toInode(byIno map[uint64]*Inode, isRoot bool) *Inode {
 	mode, known := filesystem.DefaultFileMode, false
 	if d.Mode != nil {
 		mode, known = *d.Mode, true
+		if mode & ^(filesystem.ModeDirectory|0777) != 0 || (isRoot && !mode.IsDirectory()) {
+			return nil, fmt.Errorf("snapshot entry %q has an invalid mode: %w", d.Name, filesystem.ErrInvalid)
+		}
 	}
-	isDir := mode.IsDirectory() || (!known && len(d.Children) > 0)
+	isDir := isRoot || mode.IsDirectory() || (!known && len(d.Children) > 0)
+	if !isDir && len(d.Children) > 0 {
+		return nil, fmt.Errorf("snapshot file %q has children: %w", d.Name, filesystem.ErrInvalid)
+	}
 
 	var n *Inode
 	switch {
@@ -89,11 +111,20 @@ func (d *DumpNode) toInode(byIno map[uint64]*Inode, isRoot bool) *Inode {
 	}
 
 	for _, child := range d.Children {
-		_ = n.Link(child.Name, child.toInode(byIno, false))
+		if child == nil || child.Name == "" || child.Name == currDir || child.Name == preDir || strings.ContainsAny(child.Name, "/\x00") {
+			return nil, fmt.Errorf("snapshot contains an invalid directory entry: %w", filesystem.ErrInvalid)
+		}
+		inode, err := child.toInode(byIno, false, depth+1, remaining)
+		if err != nil {
+			return nil, err
+		}
+		if err := n.Link(child.Name, inode); err != nil {
+			return nil, fmt.Errorf("restore snapshot entry %q: %w", child.Name, err)
+		}
 	}
 
 	if d.Mtime != 0 {
 		n.lock(func() { n.mtime = time.Unix(d.Mtime, 0) })
 	}
-	return n
+	return n, nil
 }

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/signal"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/signal"
 )
 
 // StreamGuard is what every read and write of a command passes through. It is the

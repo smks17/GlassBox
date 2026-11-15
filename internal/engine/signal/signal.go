@@ -3,7 +3,7 @@ package signal
 import (
 	"errors"
 
-	"parrot/internal/engine/filesystem"
+	"glass/internal/engine/filesystem"
 )
 
 var ErrInterrupted = errors.New("interrupted")

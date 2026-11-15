@@ -1,6 +1,6 @@
 package vfs
 
-import "parrot/internal/engine/filesystem"
+import "glass/internal/engine/filesystem"
 
 // checkPerm is the gate in front of every VFS operation.
 func (f *VFS) checkPerm(n *Inode, need filesystem.PermBits) error {

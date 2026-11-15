@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/network"
-	"parrot/internal/engine/proc"
-	"parrot/internal/engine/stream"
-	"parrot/internal/engine/user"
-	"parrot/internal/engine/wasi"
 	"slices"
 	"strings"
 	"time"
+
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/network"
+	"glass/internal/engine/proc"
+	"glass/internal/engine/stream"
+	"glass/internal/engine/user"
+	"glass/internal/engine/wasi"
 )
 
 type Command interface {

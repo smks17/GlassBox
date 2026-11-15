@@ -7,7 +7,7 @@ import (
 	"os"
 	osuser "os/user"
 
-	"parrot/internal/engine/user"
+	"glass/internal/engine/user"
 )
 
 func owner(os.FileInfo) user.Identity { return user.Identity{} }

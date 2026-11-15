@@ -7,7 +7,7 @@ import (
 	"net/netip"
 	"syscall"
 
-	"parrot/internal/engine/network"
+	"glass/internal/engine/network"
 )
 
 // Net is the host's TCP network.

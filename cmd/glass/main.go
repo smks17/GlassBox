@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 
-	"parrot/internal/engine"
-	"parrot/internal/engine/hostnet"
-	"parrot/internal/engine/osfs"
-	"parrot/internal/engine/wasi"
+	"glass/internal/engine"
+	"glass/internal/engine/hostnet"
+	"glass/internal/engine/osfs"
+	"glass/internal/engine/wasi"
 
 	"github.com/tetratelabs/wazero"
 )

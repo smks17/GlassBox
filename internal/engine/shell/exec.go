@@ -9,13 +9,13 @@ import (
 	"strings"
 	"sync"
 
-	"parrot/internal/engine/commands"
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/network"
-	"parrot/internal/engine/proc"
-	"parrot/internal/engine/stream"
-	"parrot/internal/engine/user"
-	"parrot/internal/engine/wasi"
+	"glass/internal/engine/commands"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/network"
+	"glass/internal/engine/proc"
+	"glass/internal/engine/stream"
+	"glass/internal/engine/user"
+	"glass/internal/engine/wasi"
 )
 
 // TODO: Configuring
@@ -83,7 +83,7 @@ const (
 func New(fs filesystem.FS, switchUser func(name, password string) error) *Shell {
 	sh := &Shell{fs: fs, vars: map[string]string{}, funcs: map[string]*List{}, user: fs.Identity(), SwitchUser: switchUser, ctx: context.Background()}
 	sh.procHandler = proc.NewTable()
-	sh.proc = sh.procHandler.Attach(1, fs.Identity(), "prt")
+	sh.proc = sh.procHandler.Attach(1, fs.Identity(), "glass")
 	sh.pid = sh.proc.PID
 	return sh
 }
@@ -337,7 +337,6 @@ func (sh *Shell) runPipeline(pipeline *Pipeline, fds *stream.FDTable) int {
 
 			child := sh.sub()
 			child.pipes = ends
-			child.fs = newDirView(sh.fs) // a stage is a subshell: its cd stays in it
 			stages.Add(1)
 			go func() {
 				defer stages.Done()
@@ -370,6 +369,9 @@ func (sh *Shell) runPipeline(pipeline *Pipeline, fds *stream.FDTable) int {
 
 func (sh *Shell) sub() *Shell {
 	child := *sh
+	child.fs = newDirView(sh.fs)
+	// A subshell cannot change the owning session's authentication state.
+	child.SwitchUser = nil
 	child.vars = maps.Clone(sh.vars)
 	child.funcs = maps.Clone(sh.funcs)
 	child.params = slices.Clone(sh.params)
@@ -397,7 +399,7 @@ func (sh *Shell) runCommand(args []string, fds *stream.FDTable) int {
 		}
 	}
 
-	fmt.Fprintf(fds.Stderr(), "prt: %s: command not found\n", name)
+	fmt.Fprintf(fds.Stderr(), "glass: %s: command not found\n", name)
 	return 127
 }
 
@@ -428,7 +430,7 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 
 func (sh *Shell) callFunc(body *List, args []string, fds *stream.FDTable) int {
 	if sh.calls >= maxCalls {
-		fmt.Fprintf(fds.Stderr(), "prt: maximum function nesting level exceeded (%d)\n", maxCalls)
+		fmt.Fprintf(fds.Stderr(), "glass: maximum function nesting level exceeded (%d)\n", maxCalls)
 		return 1
 	}
 
@@ -508,6 +510,10 @@ func (sh *Shell) setStatus(status int) int {
 
 func (sh *Shell) builtin(name string, args []string, fds *stream.FDTable) (int, bool) {
 	switch name {
+	case "cd":
+		return (commands.Cd{}).Run(sh.context(fds), args), true
+	case "su":
+		return (commands.Su{}).Run(sh.context(fds), args), true
 	case ":":
 		return 0, true
 	case "exit":
@@ -570,17 +576,17 @@ func exitStatus(args []string, fallback int) int {
 
 func (sh *Shell) source(args []string, fds *stream.FDTable) int {
 	if len(args) == 0 {
-		fmt.Fprintln(fds.Stderr(), "prt: source: no file given")
+		fmt.Fprintln(fds.Stderr(), "glass: source: no file given")
 		return 2
 	}
 
 	content, err := sh.fs.Read(args[0])
 	if err != nil {
-		fmt.Fprintf(fds.Stderr(), "prt: source: %s: %v\n", args[0], err)
+		fmt.Fprintf(fds.Stderr(), "glass: source: %s: %v\n", args[0], err)
 		return 1
 	}
 	if sh.calls >= maxCalls {
-		fmt.Fprintf(fds.Stderr(), "prt: source: %s: nested too deeply\n", args[0])
+		fmt.Fprintf(fds.Stderr(), "glass: source: %s: nested too deeply\n", args[0])
 		return 1
 	}
 
@@ -604,7 +610,7 @@ func (sh *Shell) test(args []string, fds *stream.FDTable) int {
 
 	result, err := sh.testExpr(args)
 	if err != nil {
-		fmt.Fprintf(fds.Stderr(), "prt: test: %v\n", err)
+		fmt.Fprintf(fds.Stderr(), "glass: test: %v\n", err)
 		return 2
 	}
 	if !result {
@@ -688,6 +694,6 @@ func (sh *Shell) testTwo(left, op, right string) (bool, error) {
 }
 
 func (sh *Shell) fail(fds *stream.FDTable, err error) int {
-	fmt.Fprintf(fds.Stderr(), "prt: %v\n", err)
+	fmt.Fprintf(fds.Stderr(), "glass: %v\n", err)
 	return sh.setStatus(2)
 }

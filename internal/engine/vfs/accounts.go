@@ -3,8 +3,8 @@ package vfs
 import (
 	"strings"
 
-	"parrot/internal/engine/filesystem"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/user"
 )
 
 // accounts is how the user database reads /etc/passwd, /etc/group and

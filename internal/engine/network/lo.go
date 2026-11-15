@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"sync"
 
-	"parrot/internal/engine/stream"
+	"glass/internal/engine/stream"
 )
 
 // The ports Linux hands out when a socket does not choose one
@@ -14,7 +14,7 @@ const (
 	lastEphemeralPort  = 60999
 )
 
-// LO is the loopback interface: a network that never leaves Parrot, where
+// LO is the loopback interface: a network that never leaves glassBox, where
 // one process connects to another listening in the same machine. It is pure
 // Go, so unlike the host's network it works in the browser too.
 type LO struct {

@@ -6,9 +6,9 @@ import (
 	"net/netip"
 	"strconv"
 
-	"parrot/internal/engine/network"
-	"parrot/internal/engine/proc"
-	"parrot/internal/engine/signal"
+	"glass/internal/engine/network"
+	"glass/internal/engine/proc"
+	"glass/internal/engine/signal"
 )
 
 type Nc struct{}

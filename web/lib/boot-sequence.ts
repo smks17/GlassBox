@@ -1,5 +1,5 @@
 export const bootLines: string[] = [
-  "parrot os v0.1.0",
+  "glass os v0.1.0",
   "loading virtual filesystem... ok",
   "mounting /home/mahdi... ok", // matches vfs.HomeUser in internal/engine/vfs/vfs.go
   "",

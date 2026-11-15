@@ -4,7 +4,7 @@ package main
 
 import (
 	"fmt"
-	"parrot/internal/engine"
+	"glass/internal/engine"
 	"syscall/js"
 )
 

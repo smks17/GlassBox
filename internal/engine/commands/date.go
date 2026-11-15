@@ -2,8 +2,8 @@ package commands
 
 import (
 	"fmt"
-	"parrot/internal/engine/clock"
-	"parrot/internal/engine/user"
+	"glass/internal/engine/clock"
+	"glass/internal/engine/user"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +21,7 @@ func (date Date) Usage() string {
 	return "date [-u] [-s VALUE] [+FORMAT]  — print or set the date and time"
 }
 
-const defaultLayout = "Mon Jan _2 2:03:04 MST 2002"
+const defaultLayout = "Mon Jan _2 15:04:05 MST 2006"
 
 func (date Date) Run(ctx *Context, args []string) int {
 	var utc, setting bool

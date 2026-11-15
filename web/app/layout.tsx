@@ -9,7 +9,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Parrot",
+  title: "glassBox",
   description: "A virtual Linux terminal that isn't quite real.",
 };
 

@@ -6,7 +6,7 @@ import (
 	"net/netip"
 	"strings"
 
-	"parrot/internal/engine/network"
+	"glass/internal/engine/network"
 )
 
 type IP struct{}
