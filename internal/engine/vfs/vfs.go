@@ -25,6 +25,7 @@ func New() *VFS {
 	root := newRoot(rootOwner())
 	seedEtc(root)
 	seedDev(root)
+	seedBin(root)
 
 	f := newVFS(root, root)
 	resident, err := f.db.Resident()
@@ -87,6 +88,7 @@ func makeHome(root *Inode, id user.Identity, mode filesystem.FileMode) {
 
 func FromRoot(root *Inode, cwd string) *VFS {
 	seedDev(root) // a snapshot never holds devices, so they are made again
+	seedBin(root)
 	f := newVFS(root, root)
 	if dir, err := f.Resolve(cwd); err == nil && dir.IsDir() {
 		f.cwd = dir

@@ -81,7 +81,7 @@ const (
 )
 
 func New(fs filesystem.FS, switchUser func(name, password string) error) *Shell {
-	sh := &Shell{fs: fs, vars: map[string]string{}, funcs: map[string]*List{}, user: fs.Identity(), SwitchUser: switchUser, ctx: context.Background()}
+	sh := &Shell{fs: fs, vars: map[string]string{commands.EnvPath: commands.DefaultPath}, funcs: map[string]*List{}, user: fs.Identity(), SwitchUser: switchUser, ctx: context.Background()}
 	sh.procHandler = proc.NewTable()
 	sh.proc = sh.procHandler.Attach(1, fs.Identity(), "glass")
 	sh.pid = sh.proc.PID
@@ -384,6 +384,15 @@ func (sh *Shell) sub() *Shell {
 func (sh *Shell) runCommand(args []string, fds *stream.FDTable) int {
 	name, rest := args[0], args[1:]
 
+	if strings.Contains(name, "/") {
+		cmd, status, err := sh.program(name, fds)
+		if err != nil {
+			fmt.Fprintf(fds.Stderr(), "prt: %s: %s\n", name, execError(err))
+			return status
+		}
+		return sh.runProcess(cmd, name, rest, fds)
+	}
+
 	if body, ok := sh.funcs[name]; ok {
 		return sh.callFunc(body, rest, fds)
 	}
@@ -391,6 +400,9 @@ func (sh *Shell) runCommand(args []string, fds *stream.FDTable) int {
 		return status
 	}
 	if cmd, ok := commands.Lookup(name); ok {
+		return sh.runProcess(cmd, name, rest, fds)
+	}
+	if cmd, ok := sh.lookPath(name, fds); ok {
 		return sh.runProcess(cmd, name, rest, fds)
 	}
 	if sh.Fallback != nil {

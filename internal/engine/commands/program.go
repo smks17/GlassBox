@@ -19,7 +19,25 @@ func (c Program) Usage() string { return "program PROGRAM [ARGS...]  — run a W
 
 func (c Program) Hidden() bool { return true }
 
-const defaultPath = "/usr/bin:/bin"
+// WasmProgram is a WebAssembly file run as a command: what the shell makes of
+// ./hello, or of clang once it has found /usr/bin/clang in PATH, after
+// checking the file may be run. It is made per file and never registered.
+type WasmProgram struct {
+	Path string
+}
+
+var _ Command = Program{}
+
+func (p WasmProgram) Name() string  { return path.Base(p.Path) }
+func (p WasmProgram) Usage() string { return p.Path }
+func (p WasmProgram) Hidden() bool  { return true }
+
+func (p WasmProgram) Run(ctx *Context, args []string) int {
+	if linking(args) {
+		return link(ctx, p.Path, args)
+	}
+	return run(ctx, p.Path, args)
+}
 
 const wasiLib = "/usr/lib/wasm32-wasip1"
 
@@ -43,9 +61,9 @@ func lookPath(ctx *Context, name string) (string, error) {
 	if strings.Contains(name, "/") {
 		return name, nil
 	}
-	dirs := ctx.Env["PATH"]
-	if dirs == "" {
-		dirs = defaultPath
+	dirs, set := ctx.Env[EnvPath]
+	if !set {
+		return "", errors.New("command not found")
 	}
 	for _, dir := range strings.Split(dirs, ":") {
 		candidate := path.Join(dir, name)
