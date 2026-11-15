@@ -15,6 +15,7 @@ import (
 	"glass/internal/engine/proc"
 	"glass/internal/engine/stream"
 	"glass/internal/engine/user"
+	"glass/internal/engine/wasi"
 )
 
 // TODO: Configuring
@@ -62,6 +63,10 @@ type Shell struct {
 	// Network is the machine's network, handed to every command. The engine
 	// sets it; a shell without one gives its commands none.
 	Network *network.NetworkManager
+
+	// WasiCache is handed to every command, for wasi to keep compiled
+	// programs in. The host chooses it; nil means none.
+	WasiCache wasi.Cache
 }
 
 type control int
@@ -419,6 +424,7 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 		Self:            sh.proc,
 		JobProcessGroup: sh.jobProcessGroup,
 		Network:         sh.Network,
+		WasiCache:       sh.WasiCache,
 	}
 }
 

@@ -3,16 +3,18 @@ package commands
 import (
 	"context"
 	"fmt"
-	"glass/internal/engine/filesystem"
-	"glass/internal/engine/network"
-	"glass/internal/engine/proc"
-	"glass/internal/engine/stream"
-	"glass/internal/engine/user"
 	"io"
 	"maps"
 	"slices"
 	"strings"
 	"time"
+
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/network"
+	"glass/internal/engine/proc"
+	"glass/internal/engine/stream"
+	"glass/internal/engine/user"
+	"glass/internal/engine/wasi"
 )
 
 type Command interface {
@@ -53,6 +55,9 @@ type Context struct {
 	JobProcessGroup func(jobReference string) (proc.PID, error)
 
 	Network *network.NetworkManager
+
+	// WasiCache keeps compiled WebAssembly programs between runs, or is nil.
+	WasiCache wasi.Cache
 }
 
 // NewSocket is socket(2) for this command: the socket belongs to its process
