@@ -25,25 +25,14 @@ func New() *VFS {
 	root := newRoot(rootOwner())
 	seedEtc(root)
 	seedDev(root)
+	seedBin(root)
 
 	f := newVFS(root, root)
 	resident, err := f.db.Resident()
-	residentOwner := rootOwner()
-	if err == nil {
-		residentOwner = OwnedBy(resident)
-	}
 
-	for _, dir := range []string{
-		"books", "club", "projects", "memories", "downloads", "secrets",
-	} {
-		_ = root.Link(dir, NewDir(residentOwner))
-	}
 	_ = root.Link("README.md", NewFile([]byte(
 		"Welcome.\n\nYou are in a terminal that isn't quite real.\nTry: ls, cd, cat\n",
 	), rootOwner()))
-	if club, ok := root.Lookup("club"); ok {
-		club.setOwner(Ownership{User: user.RootName, Group: user.DevGroup}, 0770|filesystem.ModeDirectory)
-	}
 
 	// /home is created as root on the way to the first home under it.
 	for _, id := range f.db.Accounts() {
@@ -87,6 +76,7 @@ func makeHome(root *Inode, id user.Identity, mode filesystem.FileMode) {
 
 func FromRoot(root *Inode, cwd string) *VFS {
 	seedDev(root) // a snapshot never holds devices, so they are made again
+	seedBin(root)
 	f := newVFS(root, root)
 	if dir, err := f.Resolve(cwd); err == nil && dir.IsDir() {
 		f.cwd = dir
