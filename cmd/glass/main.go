@@ -23,12 +23,24 @@ import (
 func main() {
 	onDisk := flag.Bool("real", false, "work on the real filesystem instead of the in-memory one")
 	hostNetwork := flag.Bool("net", false, "give the machine the host's network as eth0")
+	username := flag.String("username", "", "log in as this simulated user")
+	password := flag.String("password", "", "login password (prompted for when omitted with -username)")
 	var loads loadList
 	flag.Var(&loads, "load", "copy a host file into the machine before it starts, as `host:path` (repeatable)")
 	var published publishFlags
 	flag.Var(&published, "p", "publish a port: `[hostIP:]hostPort:port` (repeatable; hostIP defaults to 127.0.0.1)")
 	flag.Usage = usage
 	flag.Parse()
+	credentials := loginOptions{username: strings.TrimSpace(*username), password: *password}
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "password" {
+			credentials.passwordProvided = true
+		}
+	})
+	if err := credentials.validate(*onDisk); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", engine.ShellName, err)
+		os.Exit(2)
+	}
 
 	app, err := start(*onDisk)
 	if err == nil && *hostNetwork {
@@ -61,12 +73,19 @@ func main() {
 		app.SetWasiCache(cache)
 	}
 	app.SetBackgroundOutput(os.Stdout, os.Stderr)
+	scanner := bufio.NewScanner(os.Stdin)
+	// Scripts keep their default identity unless login was explicitly requested.
+	if !*onDisk && (credentials.username != "" || len(flag.Args()) == 0) {
+		if !login(app, scanner, credentials, os.Stdout, os.Stderr) {
+			os.Exit(1)
+		}
+	}
 
 	// A named file is run as a script, with the rest of the arguments as $1
 	if args := flag.Args(); len(args) > 0 {
 		os.Exit(runFile(app, args[0], args[1:]))
 	}
-	os.Exit(repl(app, *onDisk))
+	os.Exit(repl(app, scanner))
 }
 
 // loadList is the -load flags: host files to copy into the machine. Reading
@@ -106,7 +125,7 @@ func wasiCache() (wasi.Cache, error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s [-real] [-net] [-p [hostIP:]hostPort:port]... [-load host:path]... [script [args...]]\n\n", engine.ShellName)
+	fmt.Fprintf(os.Stderr, "usage: %s [-real] [-net] [-username name [-password password]] [-p [hostIP:]hostPort:port]... [-load host:path]... [script [args...]]\n\n", engine.ShellName)
 	flag.PrintDefaults()
 }
 
@@ -184,16 +203,8 @@ func runFile(app *engine.App, path string, args []string) int {
 	}))
 }
 
-func repl(app *engine.App, onDisk bool) int {
-	scanner := bufio.NewScanner(os.Stdin)
+func repl(app *engine.App, scanner *bufio.Scanner) int {
 	status := 0
-
-	// On the real filesystem there is nobody to log in as: the shell already
-	// runs as the account that started it, and the machine's own accounts are
-	// not the in-memory world's.
-	if !onDisk && !login(app, scanner) {
-		return 1
-	}
 
 	for {
 		sigil := "$"
@@ -266,28 +277,4 @@ func report(result engine.Result) int {
 		fmt.Fprintln(os.Stdout, "^C")
 	}
 	return result.ExitCode
-}
-
-func login(app *engine.App, scanner *bufio.Scanner) bool {
-	for {
-		fmt.Printf("%s login: ", engine.ShellName)
-		if !scanner.Scan() {
-			fmt.Println()
-			return false
-		}
-		name := strings.TrimSpace(scanner.Text())
-		if name == "" {
-			continue
-		}
-		fmt.Print("Password: ")
-		if !scanner.Scan() {
-			fmt.Println()
-			return false
-		}
-		if err := app.Login(name, scanner.Text()); err != nil {
-			fmt.Fprintln(os.Stderr, "Login incorrect")
-			continue
-		}
-		return true
-	}
 }
