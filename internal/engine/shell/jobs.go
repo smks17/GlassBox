@@ -97,7 +97,9 @@ func (sh *Shell) suspend(j *job, fds *stream.FDTable) {
 	j.id = sh.nextJobID()
 	sh.jobs = append(sh.jobs, j)
 	procs := j.processes()
+	sh.workers.Add(1)
 	go func() {
+		defer sh.workers.Done()
 		status, _ := sh.procHandler.Wait(procs, false)
 		sh.procHandler.Reap(procs)
 		j.finish(status)
@@ -167,9 +169,10 @@ func (sh *Shell) runProcess(cmd commands.Command, name string, args []string, fd
 func (sh *Shell) runBackground(cmd Cmd, fds *stream.FDTable) int {
 	j := sh.newJob(sh.nextJobID(), false)
 	child := sh.sub()
-	child.job, child.ctx = j, context.Background()
+	child.job, child.ctx = j, sh.lifetime
 	sh.jobs = append(sh.jobs, j)
-	go func() { j.finish(child.runCmd(cmd, fds)) }()
+	sh.workers.Add(1)
+	go func() { defer sh.workers.Done(); j.finish(child.runCmd(cmd, fds)) }()
 
 	select {
 	case <-j.started:

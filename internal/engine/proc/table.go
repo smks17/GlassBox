@@ -19,6 +19,8 @@ const (
 // Table is every process in one session ans sub sessions
 type Table struct {
 	clock           *clock.Clock
+	closing         bool
+	workers         sync.WaitGroup
 	mu              sync.Mutex
 	processes       map[PID]*Process
 	groups          map[PID]*Group
@@ -141,10 +143,18 @@ func (t *Table) Spawn(spec Spec) *Process {
 	group.joinLocked(p)
 	p.state = Runnable
 	t.processes[p.PID] = p
+	if t.closing {
+		p.cancel(context.Canceled)
+		t.makeZombieLocked(p, 130)
+		t.mu.Unlock()
+		return p
+	}
+	t.workers.Add(1)
 	t.mu.Unlock()
 
 	// The worker: the process's one goroutine. It ends when Run does.
 	go func() {
+		defer t.workers.Done()
 		code := 0
 		if p.acquireCPU() == nil {
 			code = spec.Run(p)
@@ -432,4 +442,17 @@ func (t *Table) Sleep(p *Process, d time.Duration) error {
 	// Stopped while it slept: the time ran out, but it must not go on
 	// before SIGCONT. Yield parks it until then.
 	return p.Yield()
+}
+
+// Close prevents new workers, cancels every process and waits for workers to
+// return. SIGKILL alone only changes the simulated process state.
+func (t *Table) Close() {
+	t.mu.Lock()
+	t.closing = true
+	for _, p := range t.processes {
+		p.cancel(context.Canceled)
+	}
+	t.broadcastChangeLocked()
+	t.mu.Unlock()
+	t.workers.Wait()
 }

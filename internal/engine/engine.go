@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tetratelabs/wazero"
+
 	"glass/internal/engine/clock"
 	"glass/internal/engine/commands"
 	"glass/internal/engine/dev"
@@ -18,54 +20,42 @@ import (
 	"glass/internal/engine/stream"
 	"glass/internal/engine/user"
 	"glass/internal/engine/vfs"
-	"glass/internal/engine/wasi"
 )
 
 const ShellName = "glass"
 
-type App struct {
-	session      *Session
-	tick         func()
-	background   output
-	network      *network.NetworkManager
-	wasiCache    wasi.Cache
-	readPassword func(context.Context, string) (string, error)
-}
+// App preserves the single-machine API used by the CLI and browser.
+type App struct{ *Machine }
 
 func NewApp() *App {
-	session := NewSession()
-	app := &App{session: session, network: newNetwork(&session.fs)}
-	app.session.shell.Network = app.network
-	app.seedSys()
-	return app
-}
-
-func newNetwork(fs *filesystem.FS) *network.NetworkManager {
-	nm := network.NewNetworkManager(context.Background(), fs)
-	nm.Start()
-	return nm
-}
-
-func (app *App) SetWasiCache(cache wasi.Cache) {
-	app.wasiCache = cache
-	app.session.shell.WasiCache = cache
+	return NewAppOn(vfs.New())
 }
 
 // Network is the machine's network, for the host to plug interfaces into.
-func (app *App) Network() *network.NetworkManager { return app.network }
+func (app *Machine) Network() *network.NetworkManager {
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	return app.network
+}
 
 // SetYield installs the host's hook for giving its event loop a turn.
-func (app *App) SetYield(tick func()) {
+func (app *Machine) SetYield(tick func()) {
+	app.op.Lock()
+	defer app.op.Unlock()
 	app.tick = tick
 	app.session.shell.SetYield(tick)
 }
 
-func (app *App) SetPasswordReader(read func(context.Context, string) (string, error)) {
+func (app *Machine) SetPasswordReader(read func(context.Context, string) (string, error)) {
+	app.op.Lock()
+	defer app.op.Unlock()
 	app.readPassword = read
 	app.session.shell.ReadPassword = read
 }
 
-func (app *App) SetBackgroundOutput(out, errOut io.Writer) {
+func (app *Machine) SetBackgroundOutput(out, errOut io.Writer) {
+	app.op.Lock()
+	defer app.op.Unlock()
 	app.background = output{out, errOut}
 	app.session.background = app.background
 	app.session.setOutput(out, errOut)
@@ -73,43 +63,59 @@ func (app *App) SetBackgroundOutput(out, errOut io.Writer) {
 
 // Suspend is Ctrl-Z: it stops the command running now and keeps it as a job.
 // The host calls it from another goroutine, while ExecuteStream runs.
-func (app *App) Suspend() { app.session.shell.Suspend() }
+func (app *Machine) Suspend() {
+	app.mu.Lock()
+	sh := app.session.shell
+	app.mu.Unlock()
+	sh.Suspend()
+}
 
 // NewAppOn starts a shell on a filesystem of your choosing
 func NewAppOn(fsys filesystem.FS) *App {
-	c := clock.New()
-	session := &Session{clock: c, fs: fsys, shell: shell.NewWithClock(fsys, nil, c), stdout: stream.NewBuffer(), stderr: stream.NewBuffer()}
-	session.shell.SwitchUser = session.SwitchUser
-	id := fsys.Identity()
-	vars := session.shell.Vars()
-	vars[commands.EnvUser] = id.Name
-	vars[commands.EnvHome] = id.Home
-	app := &App{session: session, network: newNetwork(&session.fs)}
-	session.shell.Network = app.network
-	app.seedSys()
-	return app
+	m := newMachine("default", fsys)
+	m.ownedCache = wazero.NewCompilationCache()
+	m.SetWasiCache(m.ownedCache)
+	_ = m.Start()
+	return &App{Machine: m}
 }
 
-func (app *App) Snapshot() ([]byte, error) {
+func (app *Machine) Snapshot() ([]byte, error) {
+	app.op.Lock()
+	defer app.op.Unlock()
 	return app.session.Snapshot()
 }
 
-func (app *App) Restore(data []byte) error {
+func (app *Machine) Restore(data []byte) error {
+	// Loading is side-effect free; a rejected snapshot leaves this boot intact.
 	session, err := LoadSession(data)
 	if err != nil {
 		return err
 	}
-	session.shell.SetYield(app.tick)
-	session.shell.Network = app.network
-	session.background = app.background
-	session.shell.WasiCache = app.wasiCache
-	session.shell.ReadPassword = app.readPassword
-	session.setOutput(app.background.out, app.background.errOut)
-	// The old session's jobs have nowhere to write now, so close them. The new session's jobs will write to the new background.
-	app.session.stdout.Close()
-	app.session.stderr.Close()
+	app.op.Lock()
+	defer app.op.Unlock()
+	app.mu.Lock()
+	if app.state != MachineRunning && app.state != MachineStopped {
+		app.mu.Unlock()
+		session.Close()
+		return ErrMachineNotRunning
+	}
+	running := app.state == MachineRunning
+	old, network := app.session, app.network
+	app.mu.Unlock()
+	old.stdout.Close()
+	old.stderr.Close()
+	// Network reads may not observe process cancellation; release descriptors
+	// before waiting for their workers.
+	if network != nil {
+		network.Close()
+	}
+	old.Close()
+	app.mu.Lock()
 	app.session = session
-	app.seedSys() // a snapshot holds no /sys
+	if running {
+		app.wireBoot()
+	}
+	app.mu.Unlock()
 	return nil
 }
 
@@ -129,6 +135,12 @@ type Session struct {
 }
 
 type output struct{ out, errOut io.Writer }
+
+func (s *Session) Close() {
+	s.stdout.Close()
+	s.stderr.Close()
+	s.shell.Close()
+}
 
 func (s *Session) setOutput(out, errOut io.Writer) {
 	s.stdout.SetOutput(out)
@@ -178,7 +190,17 @@ func (s *Session) SetUser(name string) error {
 	return nil
 }
 
-func (app *App) Login(name, password string) error { return app.session.Login(name, password) }
+func (app *Machine) Login(name, password string) error {
+	if !app.running() {
+		return ErrMachineNotRunning
+	}
+	app.op.Lock()
+	defer app.op.Unlock()
+	if !app.running() {
+		return ErrMachineNotRunning
+	}
+	return app.session.Login(name, password)
+}
 
 func (s *Session) Login(name, password string) error {
 	tree, inMemory := s.tree()
@@ -216,7 +238,11 @@ func (s *Session) User() string { return s.fs.Identity().Name }
 func (s *Session) at() string { return s.clock.In(s.shell.Vars()["TZ"]).Format("15:04:05") }
 
 // Now is that clock, for callers outside a command's result.
-func (app *App) Now() string { return app.session.at() }
+func (app *Machine) Now() string {
+	app.op.Lock()
+	defer app.op.Unlock()
+	return app.session.at()
+}
 
 // Result is what one line of input produced.
 type Result struct {
@@ -232,11 +258,21 @@ type Result struct {
 }
 
 // Execute runs one line of input and collects everything it wrote.
-func (app *App) Execute(line string) Result {
+func (app *Machine) Execute(line string) Result {
 	return app.ExecuteStream(context.Background(), line, nil, nil)
 }
 
-func (app *App) ExecuteStream(ctx context.Context, line string, out, errOut io.Writer) Result {
+func (app *Machine) ExecuteStream(ctx context.Context, line string, out, errOut io.Writer) Result {
+	if !app.running() {
+		return Result{ExitCode: 1, Stderr: ErrMachineNotRunning.Error() + "\n"}
+	}
+	app.op.Lock()
+	defer app.op.Unlock()
+	if !app.running() {
+		return app.notRunning()
+	}
+	ctx, cancel := app.executionContext(ctx)
+	defer cancel()
 	session := app.session
 	if strings.TrimSpace(line) == "" {
 		return session.result(0, Result{})
@@ -246,13 +282,23 @@ func (app *App) ExecuteStream(ctx context.Context, line string, out, errOut io.W
 }
 
 // RunScript runs a whole script, with args as $1 onwards.
-func (app *App) RunScript(src string, args []string) Result {
+func (app *Machine) RunScript(src string, args []string) Result {
 	return app.RunScriptStream(context.Background(), src, args, nil, nil)
 }
 
 // RunScriptStream is RunScript with the streaming and cancellation that
 // ExecuteStream has.
-func (app *App) RunScriptStream(ctx context.Context, src string, args []string, out, errOut io.Writer) Result {
+func (app *Machine) RunScriptStream(ctx context.Context, src string, args []string, out, errOut io.Writer) Result {
+	if !app.running() {
+		return Result{ExitCode: 1, Stderr: ErrMachineNotRunning.Error() + "\n"}
+	}
+	app.op.Lock()
+	defer app.op.Unlock()
+	if !app.running() {
+		return app.notRunning()
+	}
+	ctx, cancel := app.executionContext(ctx)
+	defer cancel()
 	app.session.shell.SetParams(args)
 	return app.session.runStream(ctx, src, out, errOut)
 }
@@ -309,7 +355,15 @@ func (s *Session) runStream(ctx context.Context, src string, out, errOut io.Writ
 }
 
 // Upload writes a file into the session's filesystem.
-func (app *App) Upload(path string, data []byte) Result {
+func (app *Machine) Upload(path string, data []byte) Result {
+	if !app.running() {
+		return Result{ExitCode: 1, Stderr: ErrMachineNotRunning.Error() + "\n"}
+	}
+	app.op.Lock()
+	defer app.op.Unlock()
+	if !app.running() {
+		return app.notRunning()
+	}
 	if err := app.session.fs.Create(path); err != nil {
 		return Result{Stderr: fmt.Sprintf("upload: %s: %v\n", path, err), ExitCode: 1, Cwd: app.session.fs.Cwd(), User: app.session.User(), At: app.session.at()}
 	}
@@ -319,16 +373,24 @@ func (app *App) Upload(path string, data []byte) Result {
 	return Result{ExitCode: 0, Cwd: app.session.fs.Cwd(), User: app.session.User(), At: app.session.at()}
 }
 
-func (app *App) Cwd() string { return app.session.Cwd() }
+func (app *Machine) Cwd() string {
+	app.op.Lock()
+	defer app.op.Unlock()
+	return app.session.Cwd()
+}
 
 func (s *Session) Cwd() string { return s.fs.Cwd() }
 
-func (app *App) User() string {
+func (app *Machine) User() string {
+	app.op.Lock()
+	defer app.op.Unlock()
 	return app.session.User()
 }
 
 // Complete offers the names in the working directory that extend a prefix.
-func (app *App) Complete(prefix string) []string {
+func (app *Machine) Complete(prefix string) []string {
+	app.op.Lock()
+	defer app.op.Unlock()
 	return app.session.Complete(prefix)
 }
 
