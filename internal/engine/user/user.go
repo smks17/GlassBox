@@ -18,7 +18,8 @@ const (
 	RootGroup = "root"
 	RootUID   = 0
 
-	DevGroup = "dev"
+	DevGroup  = "dev"
+	SudoGroup = "sudo"
 )
 
 const (
@@ -33,7 +34,8 @@ const (
 
 	DefaultGroup = "root:x:0:\n" +
 		"users:x:1000:\n" +
-		"dev:x:100:mahdi\n"
+		"dev:x:100:mahdi\n" +
+		"sudo:x:27:mahdi\n"
 
 	// Both seeded accounts start with their own name as their password.
 	DefaultShadow = "root:$s$17599196$8c3d5e561246514ee9984634d373ed62017d2ab90b93707327f8fed69dd246f1\n" +

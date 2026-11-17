@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"syscall"
@@ -23,4 +24,8 @@ func hidePasswordInput() (func() error, error) {
 		return nil, nil
 	}
 	return nil, fmt.Errorf("hidden password input is unavailable on this platform")
+}
+
+func waitPasswordInput(context.Context) error {
+	return fmt.Errorf("hidden password input is unavailable on this platform")
 }
