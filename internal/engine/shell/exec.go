@@ -27,7 +27,11 @@ const (
 
 // Shell is one running shell: a filesystem, and the state kept between commands.
 type Shell struct {
-	clock   *clock.Clock
+	clock       *clock.Clock
+	lifetime    context.Context
+	endLifetime context.CancelFunc
+	workers     *sync.WaitGroup
+
 	fs      filesystem.FS
 	vars    map[string]string
 	funcs   map[string]*List
@@ -90,6 +94,8 @@ func New(fs filesystem.FS, switchUser func(name, password string) error) *Shell 
 
 func NewWithClock(fs filesystem.FS, switchUser func(name, password string) error, c *clock.Clock) *Shell {
 	sh := &Shell{fs: fs, vars: map[string]string{commands.EnvPath: commands.DefaultPath}, funcs: map[string]*List{}, user: fs.Identity(), SwitchUser: switchUser, ctx: context.Background()}
+	sh.lifetime, sh.endLifetime = context.WithCancel(context.Background())
+	sh.workers = &sync.WaitGroup{}
 	sh.clock = c
 	sh.procHandler = proc.NewTableWithClock(c)
 	sh.proc = sh.procHandler.Attach(1, fs.Identity(), "glass")
@@ -357,7 +363,9 @@ func (sh *Shell) runPipeline(pipeline *Pipeline, fds *stream.FDTable) int {
 				// fg or bg continues it, so its ends stay open until its process
 				// ends; then the next stage sees EOF, as it would have.
 				if p := child.lastProcess; p != nil && sh.procHandler.Stopped([]*proc.Process{p}) {
+					sh.workers.Add(1)
 					go func() {
+						defer sh.workers.Done()
 						sh.procHandler.Wait([]*proc.Process{p}, false)
 						localFdTable.Destroy()
 					}()
@@ -736,4 +744,19 @@ func (sh *Shell) testTwo(left, op, right string) (bool, error) {
 func (sh *Shell) fail(fds *stream.FDTable, err error) int {
 	fmt.Fprintf(fds.Stderr(), "glass: %v\n", err)
 	return sh.setStatus(2)
+}
+
+// SetLifetime binds all shell work, including background jobs, to one boot.
+// Called only before this shell begins executing.
+func (sh *Shell) SetLifetime(ctx context.Context) {
+	sh.endLifetime()
+	sh.lifetime, sh.endLifetime = context.WithCancel(ctx)
+}
+
+// Close waits for real workers, not just simulated process exit status.
+// The owner must first cancel active foreground execution and wait for Run.
+func (sh *Shell) Close() {
+	sh.endLifetime()
+	sh.procHandler.Close()
+	sh.workers.Wait()
 }

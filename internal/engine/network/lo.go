@@ -18,6 +18,8 @@ const (
 // one process connects to another listening in the same machine. It is pure
 // Go, so unlike the host's network it works in the browser too.
 type LO struct {
+	closed    bool
+	conns     map[*loConn]struct{}
 	mu        sync.Mutex
 	listeners map[netip.AddrPort]*loListener
 	nextPort  uint16
@@ -26,7 +28,7 @@ type LO struct {
 var _ Network = (*LO)(nil)
 
 func NewLO() *LO {
-	return &LO{listeners: map[netip.AddrPort]*loListener{}, nextPort: firstEphemeralPort}
+	return &LO{conns: map[*loConn]struct{}{}, listeners: map[netip.AddrPort]*loListener{}, nextPort: firstEphemeralPort}
 }
 
 func (lo *LO) Connect(localIP netip.Addr, localPort uint16, ip netip.Addr, port uint16) (Conn, error) {
@@ -39,6 +41,9 @@ func (lo *LO) Connect(localIP netip.Addr, localPort uint16, ip netip.Addr, port 
 
 	lo.mu.Lock()
 	defer lo.mu.Unlock()
+	if lo.closed {
+		return nil, ErrNetDown
+	}
 	listener := lo.listenerAt(ip, port)
 	if listener == nil {
 		return nil, ErrConnRefused
@@ -56,11 +61,24 @@ func (lo *LO) Connect(localIP netip.Addr, localPort uint16, ip netip.Addr, port 
 	server := &loConn{in: toServer, out: toClient,
 		localIP: ip, localPort: port, remoteIP: localIP, remotePort: localPort}
 
+	closePair := func() {
+		toServer.Close()
+		toClient.Close()
+		lo.mu.Lock()
+		delete(lo.conns, client)
+		delete(lo.conns, server)
+		lo.mu.Unlock()
+	}
+	client.onClose, server.onClose = closePair, closePair
+	lo.conns[client], lo.conns[server] = struct{}{}, struct{}{}
 	select {
 	case listener.queue <- server:
 		return client, nil
 	default:
-		client.Close()
+		delete(lo.conns, client)
+		delete(lo.conns, server)
+		toServer.Close()
+		toClient.Close()
 		return nil, ErrConnRefused
 	}
 }
@@ -71,6 +89,9 @@ func (lo *LO) Listen(ip netip.Addr, port uint16, backlog int) (Listener, error) 
 	}
 	lo.mu.Lock()
 	defer lo.mu.Unlock()
+	if lo.closed {
+		return nil, ErrNetDown
+	}
 	if port == 0 {
 		port = lo.ephemeralPort()
 	}
@@ -90,6 +111,11 @@ func (lo *LO) Listen(ip netip.Addr, port uint16, backlog int) (Listener, error) 
 
 func (lo *LO) Close() error {
 	lo.mu.Lock()
+	lo.closed = true
+	conns := make([]*loConn, 0, len(lo.conns))
+	for c := range lo.conns {
+		conns = append(conns, c)
+	}
 	listeners := make([]*loListener, 0, len(lo.listeners))
 	for _, listener := range lo.listeners {
 		listeners = append(listeners, listener)
@@ -97,6 +123,9 @@ func (lo *LO) Close() error {
 	lo.mu.Unlock()
 	for _, listener := range listeners {
 		listener.Close()
+	}
+	for _, c := range conns {
+		c.Close()
 	}
 	return nil
 }
@@ -124,7 +153,9 @@ func (lo *LO) ephemeralPort() uint16 {
 
 // loConn is one end of a loopback connection
 type loConn struct {
-	in, out *stream.Buffer
+	onClose   func()
+	closeOnce sync.Once
+	in, out   *stream.Buffer
 
 	localIP, remoteIP     netip.Addr
 	localPort, remotePort uint16
@@ -137,8 +168,7 @@ func (c *loConn) CloseWrite() error           { c.out.Close(); return nil }
 func (c *loConn) CloseRead() error            { c.in.Close(); return nil }
 
 func (c *loConn) Close() error {
-	c.out.Close()
-	c.in.Close()
+	c.closeOnce.Do(c.onClose)
 	return nil
 }
 

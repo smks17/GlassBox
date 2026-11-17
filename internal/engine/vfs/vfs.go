@@ -14,13 +14,16 @@ import (
 var _ filesystem.FS = (*VFS)(nil)
 
 type VFS struct {
-	root *Inode
-	cwd  *Inode
-	id   user.Identity
-	db   *user.DB
+	clock *clock.Clock
+	root  *Inode
+	cwd   *Inode
+	id    user.Identity
+	db    *user.DB
 }
 
 func rootOwner() Ownership { return Ownership{User: user.RootName, Group: user.RootGroup} }
+
+func (f *VFS) Clock() *clock.Clock { return f.clock }
 
 func New() *VFS {
 	return NewWithClock(clock.New())
@@ -95,7 +98,7 @@ func FromRootWithClock(root *Inode, cwd string, c *clock.Clock) *VFS {
 
 func newVFS(root, cwd *Inode, c *clock.Clock) *VFS {
 	root.setClock(c, map[*Inode]bool{})
-	return &VFS{root: root, cwd: cwd, db: user.NewDB(accounts{root: root})}
+	return &VFS{clock: c, root: root, cwd: cwd, db: user.NewDB(accounts{root: root})}
 }
 
 func (f *VFS) UsersDB() *user.DB { return f.db }

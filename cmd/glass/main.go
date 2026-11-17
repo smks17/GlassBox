@@ -9,19 +9,17 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"glass/internal/engine"
 	"glass/internal/engine/hostnet"
 	"glass/internal/engine/osfs"
-	"glass/internal/engine/wasi"
-
-	"github.com/tetratelabs/wazero"
 )
 
-func main() {
+func main() { os.Exit(run()) }
+
+func run() int {
 	onDisk := flag.Bool("real", false, "work on the real filesystem instead of the in-memory one")
 	hostNetwork := flag.Bool("net", false, "give the machine the host's network as eth0")
 	username := flag.String("username", "", "log in as this simulated user")
@@ -40,10 +38,15 @@ func main() {
 	})
 	if err := credentials.validate(*onDisk); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", engine.ShellName, err)
-		os.Exit(2)
+		return 2
 	}
 
 	app, err := start(*onDisk)
+	defer func() {
+		if app != nil {
+			_ = app.Close(context.Background())
+		}
+	}()
 	if err == nil && *hostNetwork {
 		err = attachHostNetwork(app)
 	}
@@ -55,30 +58,24 @@ func main() {
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", engine.ShellName, err)
-		os.Exit(1)
+		return 1
 	}
 	if !*onDisk {
 		if err := installToolchain(app); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: installing the toolchain: %v\n", engine.ShellName, err)
-			os.Exit(1)
+			return 1
 		}
 	}
 	if err := loads.into(app); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", engine.ShellName, err)
-		os.Exit(1)
-	}
-	if cache, err := wasiCache(); err != nil {
-		// Programs still run without it, only slower to start.
-		fmt.Fprintf(os.Stderr, "%s: no cache for compiled programs: %v\n", engine.ShellName, err)
-	} else {
-		app.SetWasiCache(cache)
+		return 1
 	}
 	app.SetBackgroundOutput(os.Stdout, os.Stderr)
 	reader := bufio.NewReader(os.Stdin)
 	// Scripts keep their default identity unless login was explicitly requested.
 	if !*onDisk && (credentials.username != "" || len(flag.Args()) == 0) {
 		if !login(app, reader, credentials, os.Stdout, os.Stderr) {
-			os.Exit(1)
+			return 1
 		}
 	}
 	if !*onDisk {
@@ -87,9 +84,9 @@ func main() {
 
 	// A named file is run as a script, with the rest of the arguments as $1
 	if args := flag.Args(); len(args) > 0 {
-		os.Exit(runFile(app, args[0], args[1:]))
+		return runFile(app, args[0], args[1:])
 	}
-	os.Exit(repl(app, reader))
+	return repl(app, reader)
 }
 
 // loadList is the -load flags: host files to copy into the machine. Reading
@@ -120,14 +117,6 @@ func (l loadList) into(app *engine.App) error {
 	}
 	return nil
 }
-func wasiCache() (wasi.Cache, error) {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		return nil, err
-	}
-	return wazero.NewCompilationCacheWithDir(filepath.Join(dir, "parrot", "wasi"))
-}
-
 func usage() {
 	fmt.Fprintf(os.Stderr, "usage: %s [-real] [-net] [-username name [-password password]] [-p [hostIP:]hostPort:port]... [-load host:path]... [script [args...]]\n\n", engine.ShellName)
 	flag.PrintDefaults()

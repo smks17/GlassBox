@@ -19,7 +19,9 @@ type NetworkManager struct {
 	up         map[string]bool           // ip link set NAME up|down; a down link carries nothing
 	addrs      map[string][]netip.Prefix // ip addr: each address with the length of its subnet, as 192.168.1.5/24
 	routes     []Route                   // longest prefix first, so the first match is the one to use
-	published  []Listener                // the outside listeners of published ports
+	resources  map[io.Closer]struct{}
+	workers    sync.WaitGroup
+	published  []Listener // the outside listeners of published ports
 	down       bool
 	Resolver   *resolver
 
@@ -27,9 +29,11 @@ type NetworkManager struct {
 	// kernel's netdevice notifier tells sysfs to make its directory.
 	onNewInterface func(name string)
 
-	ctx      context.Context
-	shutdown chan struct{}
-	stopOnce sync.Once
+	ctx       context.Context
+	shutdown  chan struct{}
+	stopOnce  sync.Once
+	startOnce sync.Once
+	done      chan struct{}
 }
 
 var _ Network = (*NetworkManager)(nil)
@@ -44,7 +48,8 @@ type Route struct {
 func NewNetworkManager(ctx context.Context, fs *filesystem.FS) *NetworkManager {
 	lo := NewLO() // one loopback, under both names, or a listener on one is missing from the other
 	nm := &NetworkManager{
-		LO: lo,
+		LO:        lo,
+		resources: map[io.Closer]struct{}{},
 		interfaces: map[string]Network{
 			"lo": lo,
 		},
@@ -53,6 +58,7 @@ func NewNetworkManager(ctx context.Context, fs *filesystem.FS) *NetworkManager {
 		addrs:    map[string][]netip.Prefix{},
 		ctx:      ctx,
 		shutdown: make(chan struct{}),
+		done:     make(chan struct{}),
 		Resolver: NewResolver(fs),
 	}
 	// lo's routes come with its addresses, as every interface's do.
@@ -70,6 +76,10 @@ func (nm *NetworkManager) GetInterface(name string) (Network, bool) {
 
 func (nm *NetworkManager) AddInterface(name string, network Network) {
 	nm.mu.Lock()
+	if nm.down {
+		nm.mu.Unlock()
+		return
+	}
 	if _, replaced := nm.interfaces[name]; !replaced {
 		nm.order = append(nm.order, name)
 	}
@@ -237,7 +247,11 @@ func (nm *NetworkManager) Connect(localIP netip.Addr, localPort uint16, ip netip
 	if err != nil {
 		return nil, err
 	}
-	return iface.Connect(localIP, localPort, ip, port)
+	conn, err := iface.Connect(localIP, localPort, ip, port)
+	if err != nil {
+		return nil, err
+	}
+	return nm.ownConn(conn)
 }
 
 // TODO: listen on every bridge the machine is attached to as well.
@@ -249,13 +263,13 @@ func (nm *NetworkManager) Listen(ip netip.Addr, port uint16, backlog int) (Liste
 		if down {
 			return nil, ErrNetDown
 		}
-		return nm.LO.Listen(ip, port, backlog)
+		return nm.listenOn(nm.LO, ip, port, backlog)
 	}
 	iface, err := nm.routeTo(ip)
 	if err != nil {
 		return nil, err
 	}
-	return iface.Listen(ip, port, backlog)
+	return nm.listenOn(iface, ip, port, backlog)
 }
 
 // Publish is peers that connects then in outside are forwarded to port on this machine's lo.
@@ -265,17 +279,29 @@ func (nm *NetworkManager) Publish(outside Network, outsideIP netip.Addr, outside
 		return err
 	}
 	nm.mu.Lock()
+	if nm.down {
+		nm.mu.Unlock()
+		listener.Close()
+		return ErrNetDown
+	}
 	nm.published = append(nm.published, listener)
+	nm.workers.Add(1)
 	nm.mu.Unlock()
 
 	// Ends when takeDown closes the listener.
 	go func() {
+		defer nm.workers.Done()
 		for {
 			peer, err := listener.Accept()
 			if err != nil {
 				return
 			}
-			go nm.forward(peer, port)
+			peer, err = nm.ownConn(peer)
+			if err != nil {
+				return
+			}
+			nm.workers.Add(1)
+			go func(peer Conn) { defer nm.workers.Done(); nm.forward(peer, port) }(peer)
 		}
 	}()
 	return nil
@@ -289,22 +315,38 @@ func (nm *NetworkManager) forward(peer Conn, port uint16) {
 		return // nobody listening inside: the peer is hung up on
 	}
 	defer target.Close()
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		io.Copy(target, peer)
 		target.CloseWrite()
 	}()
 	io.Copy(peer, target)
+	peer.Close()
+	target.Close()
+	<-done
 }
 
-// TODO: Later use systemd
+// Start begins the boot lifetime watcher. Repeated calls are safe.
 func (nm *NetworkManager) Start() {
-	go func() {
-		select {
-		case <-nm.shutdown:
-		case <-nm.ctx.Done():
-		}
-		nm.takeDown()
-	}()
+	nm.startOnce.Do(func() {
+		go func() {
+			defer close(nm.done)
+			select {
+			case <-nm.shutdown:
+			case <-nm.ctx.Done():
+			}
+			nm.takeDown()
+		}()
+	})
+}
+
+// Close waits until teardown is complete.
+func (nm *NetworkManager) Close() error {
+	nm.Start()
+	nm.Stop()
+	<-nm.done
+	return nil
 }
 
 func (nm *NetworkManager) Stop() {
@@ -320,9 +362,17 @@ func (nm *NetworkManager) takeDown() {
 	for _, iface := range nm.interfaces {
 		interfaces = append(interfaces, iface)
 	}
+	resources := make([]io.Closer, 0, len(nm.resources))
+	for r := range nm.resources {
+		resources = append(resources, r)
+	}
+	nm.onNewInterface = nil
 	published := nm.published
 	nm.published = nil
 	nm.mu.Unlock()
+	for _, r := range resources {
+		r.Close()
+	}
 	for _, listener := range published {
 		listener.Close()
 	}
@@ -331,4 +381,5 @@ func (nm *NetworkManager) takeDown() {
 			closer.Close()
 		}
 	}
+	nm.workers.Wait()
 }
