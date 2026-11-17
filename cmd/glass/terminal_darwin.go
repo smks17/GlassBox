@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"syscall"
@@ -26,4 +27,21 @@ func hidePasswordInput() (func() error, error) {
 		return nil, err
 	}
 	return func() error { return unix.IoctlSetTermios(fd, unix.TIOCSETA, original) }, nil
+}
+
+func waitPasswordInput(ctx context.Context) error {
+	for ctx.Err() == nil {
+		fds := []unix.PollFd{{Fd: int32(os.Stdin.Fd()), Events: unix.POLLIN}}
+		ready, err := unix.Poll(fds, 100)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if ready != 0 {
+			return nil
+		}
+	}
+	return ctx.Err()
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -73,19 +74,22 @@ func main() {
 		app.SetWasiCache(cache)
 	}
 	app.SetBackgroundOutput(os.Stdout, os.Stderr)
-	scanner := bufio.NewScanner(os.Stdin)
+	reader := bufio.NewReader(os.Stdin)
 	// Scripts keep their default identity unless login was explicitly requested.
 	if !*onDisk && (credentials.username != "" || len(flag.Args()) == 0) {
-		if !login(app, scanner, credentials, os.Stdout, os.Stderr) {
+		if !login(app, reader, credentials, os.Stdout, os.Stderr) {
 			os.Exit(1)
 		}
+	}
+	if !*onDisk {
+		app.SetPasswordReader(passwordReader(reader))
 	}
 
 	// A named file is run as a script, with the rest of the arguments as $1
 	if args := flag.Args(); len(args) > 0 {
 		os.Exit(runFile(app, args[0], args[1:]))
 	}
-	os.Exit(repl(app, scanner))
+	os.Exit(repl(app, reader))
 }
 
 // loadList is the -load flags: host files to copy into the machine. Reading
@@ -203,7 +207,7 @@ func runFile(app *engine.App, path string, args []string) int {
 	}))
 }
 
-func repl(app *engine.App, scanner *bufio.Scanner) int {
+func repl(app *engine.App, reader *bufio.Reader) int {
 	status := 0
 
 	for {
@@ -212,14 +216,16 @@ func repl(app *engine.App, scanner *bufio.Scanner) int {
 			sigil = "#"
 		}
 		fmt.Printf("%s%s ", app.User(), sigil)
-		// Scan reports false for both the end of input and a read error; the
-		// error itself is checked after the loop.
-		if !scanner.Scan() {
+		line, err := readLine(reader)
+		if err == io.EOF {
 			fmt.Println()
 			break
 		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, engine.ShellName+": read error:", err)
+			return 1
+		}
 
-		line := scanner.Text()
 		result := interruptible(app, func(ctx context.Context) engine.Result {
 			return app.ExecuteStream(ctx, line, os.Stdout, os.Stderr)
 		})
@@ -229,10 +235,6 @@ func repl(app *engine.App, scanner *bufio.Scanner) int {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(os.Stderr, engine.ShellName+": read error:", err)
-		return 1
-	}
 	return status
 }
 
@@ -261,6 +263,12 @@ func interruptible(app *engine.App, run func(ctx context.Context) engine.Result)
 				cancel()
 				return
 			case <-suspend:
+				// A password prompt owns stdin until it restores terminal echo.
+				// Cancel it instead of returning a stopped reader to the REPL.
+				if passwordPromptActive.Load() {
+					cancel()
+					return
+				}
 				app.Suspend() // the command stops; the line goes on without it
 			case <-done:
 				return

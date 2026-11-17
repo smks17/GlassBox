@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"time"
 
 	"glass/internal/engine/clock"
 	"glass/internal/engine/commands"
@@ -22,11 +24,12 @@ import (
 const ShellName = "glass"
 
 type App struct {
-	session    *Session
-	tick       func()
-	background output
-	network    *network.NetworkManager
-	wasiCache  wasi.Cache
+	session      *Session
+	tick         func()
+	background   output
+	network      *network.NetworkManager
+	wasiCache    wasi.Cache
+	readPassword func(context.Context, string) (string, error)
 }
 
 func NewApp() *App {
@@ -55,6 +58,11 @@ func (app *App) Network() *network.NetworkManager { return app.network }
 func (app *App) SetYield(tick func()) {
 	app.tick = tick
 	app.session.shell.SetYield(tick)
+}
+
+func (app *App) SetPasswordReader(read func(context.Context, string) (string, error)) {
+	app.readPassword = read
+	app.session.shell.ReadPassword = read
 }
 
 func (app *App) SetBackgroundOutput(out, errOut io.Writer) {
@@ -94,6 +102,7 @@ func (app *App) Restore(data []byte) error {
 	session.shell.Network = app.network
 	session.background = app.background
 	session.shell.WasiCache = app.wasiCache
+	session.shell.ReadPassword = app.readPassword
 	session.setOutput(app.background.out, app.background.errOut)
 	// The old session's jobs have nowhere to write now, so close them. The new session's jobs will write to the new background.
 	app.session.stdout.Close()
@@ -105,10 +114,14 @@ func (app *App) Restore(data []byte) error {
 
 // Session is one shell and the filesystem it runs on.
 type Session struct {
-	fs     filesystem.FS
-	shell  *shell.Shell
-	stdout *stream.Buffer
-	stderr *stream.Buffer
+	fs        filesystem.FS
+	shell     *shell.Shell
+	stdout    *stream.Buffer
+	stderr    *stream.Buffer
+	sudoMutex sync.Mutex
+	// TODO: Later add last login for each user and check based on that
+	sudoExpires    map[string]time.Time
+	sudoGeneration uint64
 
 	background output // where output goes between lines; nil keeps it waiting
 }
@@ -125,6 +138,7 @@ func NewSession() *Session { return newSession(vfs.New()) }
 func newSession(filesystem *vfs.VFS) *Session {
 	s := &Session{fs: filesystem, shell: shell.New(filesystem, nil), stdout: stream.NewBuffer(), stderr: stream.NewBuffer()}
 	s.shell.SwitchUser = s.SwitchUser
+	s.shell.AuthorizeSudo = s.authorizeSudo
 	_ = filesystem.MakeDevice("/dev/tty", dev.NewTerminal(strings.NewReader(""), s.stdout), 0666)
 	resident, err := filesystem.UsersDB().Resident()
 	if err != nil || s.SetUser(resident.Name) != nil {
@@ -147,6 +161,10 @@ func (s *Session) SetUser(name string) error {
 	if err != nil {
 		return err
 	}
+	s.sudoMutex.Lock()
+	s.sudoExpires = nil
+	s.sudoGeneration++
+	s.sudoMutex.Unlock()
 	tree.SetIdentity(id)
 	s.shell.SetUser(id)
 	vars := s.shell.Vars()

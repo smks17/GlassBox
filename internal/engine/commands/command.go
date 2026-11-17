@@ -43,8 +43,10 @@ type Context struct {
 	Env     map[string]string
 	History []HistoryEntry
 
-	User       user.Identity
-	SwitchUser func(name, password string) error
+	User         user.Identity
+	SwitchUser   func(name, password string) error
+	RunSudo      func(target string, args []string, readPassword func() (string, error)) int
+	ReadPassword func(context.Context, string) (string, error)
 
 	// Proc is the process table and Self the process running this command,
 	// for kill, ps and sleep.

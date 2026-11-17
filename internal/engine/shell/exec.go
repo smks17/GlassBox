@@ -42,8 +42,10 @@ type Shell struct {
 	ctx  context.Context
 	tick func() // The shell alls it where a loop could otherwise run forever without parking
 
-	user       user.Identity
-	SwitchUser func(name, password string) error
+	user          user.Identity
+	SwitchUser    func(name, password string) error
+	AuthorizeSudo func(caller user.Identity, target string, readPassword func() (string, error)) (user.Identity, error)
+	ReadPassword  func(context.Context, string) (string, error)
 
 	proc               *proc.Process // the shell's process, every command's parent
 	procHandler        *proc.Table
@@ -385,12 +387,7 @@ func (sh *Shell) runCommand(args []string, fds *stream.FDTable) int {
 	name, rest := args[0], args[1:]
 
 	if strings.Contains(name, "/") {
-		cmd, status, err := sh.program(name, fds)
-		if err != nil {
-			fmt.Fprintf(fds.Stderr(), "prt: %s: %s\n", name, execError(err))
-			return status
-		}
-		return sh.runProcess(cmd, name, rest, fds)
+		return sh.runExecutable(args, fds)
 	}
 
 	if body, ok := sh.funcs[name]; ok {
@@ -398,6 +395,20 @@ func (sh *Shell) runCommand(args []string, fds *stream.FDTable) int {
 	}
 	if status, ok := sh.builtin(name, rest, fds); ok {
 		return status
+	}
+	return sh.runExecutable(args, fds)
+}
+
+// runExecutable deliberately excludes shell functions and builtins.
+func (sh *Shell) runExecutable(args []string, fds *stream.FDTable) int {
+	name, rest := args[0], args[1:]
+	if strings.Contains(name, "/") {
+		cmd, status, err := sh.program(name, fds)
+		if err != nil {
+			fmt.Fprintf(fds.Stderr(), "glass: %s: %s\n", name, execError(err))
+			return status
+		}
+		return sh.runProcess(cmd, name, rest, fds)
 	}
 	if cmd, ok := commands.Lookup(name); ok {
 		return sh.runProcess(cmd, name, rest, fds)
@@ -421,7 +432,7 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 	if !sh.proc.Attached() {
 		guard.Process = sh.proc
 	}
-	return &commands.Context{
+	ctx := &commands.Context{
 		Ctx:             sh.ctx,
 		VFS:             viewFor(sh.fs, fds),
 		Fds:             fds,
@@ -438,6 +449,15 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 		Network:         sh.Network,
 		WasiCache:       sh.WasiCache,
 	}
+	if sh.AuthorizeSudo != nil {
+		ctx.RunSudo = func(target string, args []string, readPassword func() (string, error)) int {
+			return sh.runSudo(target, args, readPassword, fds)
+		}
+	}
+	if sh.job == nil || sh.job.foreground {
+		ctx.ReadPassword = sh.ReadPassword
+	}
+	return ctx
 }
 
 func (sh *Shell) callFunc(body *List, args []string, fds *stream.FDTable) int {
