@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"glass/internal/engine/clock"
 	"glass/internal/engine/filesystem"
 	"glass/internal/engine/network"
 	"glass/internal/engine/proc"
@@ -31,8 +32,9 @@ type HistoryEntry struct {
 }
 
 type Context struct {
-	Ctx context.Context
-	VFS filesystem.FS
+	Clock *clock.Clock
+	Ctx   context.Context
+	VFS   filesystem.FS
 
 	// Fds is the process's descriptor table. Stdin, Stdout and Stderr
 	Fds *stream.FDTable

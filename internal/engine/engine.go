@@ -77,7 +77,8 @@ func (app *App) Suspend() { app.session.shell.Suspend() }
 
 // NewAppOn starts a shell on a filesystem of your choosing
 func NewAppOn(fsys filesystem.FS) *App {
-	session := &Session{fs: fsys, shell: shell.New(fsys, nil), stdout: stream.NewBuffer(), stderr: stream.NewBuffer()}
+	c := clock.New()
+	session := &Session{clock: c, fs: fsys, shell: shell.NewWithClock(fsys, nil, c), stdout: stream.NewBuffer(), stderr: stream.NewBuffer()}
 	session.shell.SwitchUser = session.SwitchUser
 	id := fsys.Identity()
 	vars := session.shell.Vars()
@@ -114,6 +115,7 @@ func (app *App) Restore(data []byte) error {
 
 // Session is one shell and the filesystem it runs on.
 type Session struct {
+	clock     *clock.Clock
 	fs        filesystem.FS
 	shell     *shell.Shell
 	stdout    *stream.Buffer
@@ -133,10 +135,13 @@ func (s *Session) setOutput(out, errOut io.Writer) {
 	s.stderr.SetOutput(errOut)
 }
 
-func NewSession() *Session { return newSession(vfs.New()) }
+func NewSession() *Session {
+	c := clock.New()
+	return newSession(vfs.NewWithClock(c), c)
+}
 
-func newSession(filesystem *vfs.VFS) *Session {
-	s := &Session{fs: filesystem, shell: shell.New(filesystem, nil), stdout: stream.NewBuffer(), stderr: stream.NewBuffer()}
+func newSession(filesystem *vfs.VFS, c *clock.Clock) *Session {
+	s := &Session{clock: c, fs: filesystem, shell: shell.NewWithClock(filesystem, nil, c), stdout: stream.NewBuffer(), stderr: stream.NewBuffer()}
 	s.shell.SwitchUser = s.SwitchUser
 	s.shell.AuthorizeSudo = s.authorizeSudo
 	_ = filesystem.MakeDevice("/dev/tty", dev.NewTerminal(strings.NewReader(""), s.stdout), 0666)
@@ -208,7 +213,7 @@ func (s *Session) SwitchUser(name, password string) error {
 func (s *Session) User() string { return s.fs.Identity().Name }
 
 // at is the wall clock the shell believes in — TZ and `date -s` included.
-func (s *Session) at() string { return clock.In(s.shell.Vars()["TZ"]).Format("15:04:05") }
+func (s *Session) at() string { return s.clock.In(s.shell.Vars()["TZ"]).Format("15:04:05") }
 
 // Now is that clock, for callers outside a command's result.
 func (app *App) Now() string { return app.session.at() }
@@ -236,7 +241,7 @@ func (app *App) ExecuteStream(ctx context.Context, line string, out, errOut io.W
 	if strings.TrimSpace(line) == "" {
 		return session.result(0, Result{})
 	}
-	session.shell.History = append(session.shell.History, commands.HistoryEntry{Line: line, At: clock.Now()})
+	session.shell.History = append(session.shell.History, commands.HistoryEntry{Line: line, At: session.clock.Now()})
 	return session.runStream(ctx, line, out, errOut)
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"glass/internal/engine/clock"
 	"glass/internal/engine/dev"
 	"glass/internal/engine/filesystem"
 	"glass/internal/engine/stream"
@@ -22,12 +23,16 @@ type VFS struct {
 func rootOwner() Ownership { return Ownership{User: user.RootName, Group: user.RootGroup} }
 
 func New() *VFS {
-	root := newRoot(rootOwner())
+	return NewWithClock(clock.New())
+}
+
+func NewWithClock(c *clock.Clock) *VFS {
+	root := newRoot(rootOwner()).withClock(c)
+	f := newVFS(root, root, c)
 	seedEtc(root)
 	seedDev(root)
 	seedBin(root)
 
-	f := newVFS(root, root)
 	resident, err := f.db.Resident()
 
 	_ = root.Link("README.md", NewFile([]byte(
@@ -75,16 +80,21 @@ func makeHome(root *Inode, id user.Identity, mode filesystem.FileMode) {
 }
 
 func FromRoot(root *Inode, cwd string) *VFS {
+	return FromRootWithClock(root, cwd, clock.New())
+}
+
+func FromRootWithClock(root *Inode, cwd string, c *clock.Clock) *VFS {
+	f := newVFS(root, root, c)
 	seedDev(root) // a snapshot never holds devices, so they are made again
 	seedBin(root)
-	f := newVFS(root, root)
 	if dir, err := f.Resolve(cwd); err == nil && dir.IsDir() {
 		f.cwd = dir
 	}
 	return f
 }
 
-func newVFS(root, cwd *Inode) *VFS {
+func newVFS(root, cwd *Inode, c *clock.Clock) *VFS {
+	root.setClock(c, map[*Inode]bool{})
 	return &VFS{root: root, cwd: cwd, db: user.NewDB(accounts{root: root})}
 }
 
