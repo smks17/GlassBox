@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"glass/internal/engine/clock"
 	"glass/internal/engine/filesystem"
 
 	"github.com/tetratelabs/wazero"
@@ -38,6 +39,7 @@ const (
 type Cache = wazero.CompilationCache
 
 type WasiContext struct {
+	Clock  *clock.Clock
 	FS     filesystem.FS
 	Stdin  io.Reader
 	Stdout io.Writer

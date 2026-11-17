@@ -83,6 +83,7 @@ func run(ctx *Context, program string, args []string) int {
 	}
 	argv := append([]string{path.Base(program)}, args...)
 	return wasi.Run(ctx.Ctx, module, wasi.WasiContext{
+		Clock:  ctx.Clock,
 		FS:     ctx.VFS,
 		Stdin:  ctx.Stdin,
 		Stdout: ctx.Stdout,

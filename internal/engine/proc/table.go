@@ -18,6 +18,7 @@ const (
 
 // Table is every process in one session ans sub sessions
 type Table struct {
+	clock           *clock.Clock
 	mu              sync.Mutex
 	processes       map[PID]*Process
 	groups          map[PID]*Group
@@ -28,13 +29,15 @@ type Table struct {
 	cpuScheduler    *scheduler
 }
 
-func NewTable() *Table {
+func NewTable() *Table { return NewTableWithClock(clock.New()) }
+func NewTableWithClock(c *clock.Clock) *Table {
 	t := &Table{
+		clock:           c,
 		processes:       map[PID]*Process{},
 		nextPID:         firstPID,
 		groups:          map[PID]*Group{},
 		changeBroadcast: make(chan struct{}),
-		boot:            clock.Now(),
+		boot:            c.Now(),
 		cpuScheduler:    newScheduler(virtualCPUs, defaultTimeSlice),
 	}
 	root := user.Identity{Name: user.RootName, UID: user.RootUID}
@@ -92,7 +95,7 @@ func newProcess(t *Table, parent context.Context, pid, ppid PID, id user.Identit
 	}
 	ctx, cancel := context.WithCancelCause(parent)
 	return &Process{
-		PID: pid, PPID: ppid, Start: clock.Now(), table: t,
+		PID: pid, PPID: ppid, Start: t.clock.Now(), table: t,
 		user: id, name: name, args: args,
 		ctx: ctx, cancel: cancel,
 	}

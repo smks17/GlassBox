@@ -10,7 +10,6 @@ import (
 	"path"
 	"sort"
 
-	"glass/internal/engine/clock"
 	"glass/internal/engine/filesystem"
 	"glass/internal/engine/stream"
 
@@ -249,7 +248,7 @@ func (h *hostWasi) environGet(_ context.Context, m api.Module, ptrs, buf uint32)
 }
 
 func (h *hostWasi) clockTimeGet(_ context.Context, m api.Module, _ uint32, _ uint64, ptr uint32) uint32 {
-	m.Memory().WriteUint64Le(ptr, uint64(clock.Now().UnixNano()))
+	m.Memory().WriteUint64Le(ptr, uint64(h.cfg.Clock.Now().UnixNano()))
 	return errnoSuccess
 }
 

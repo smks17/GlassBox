@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"glass/internal/engine/clock"
 	"glass/internal/engine/commands"
 	"glass/internal/engine/filesystem"
 	"glass/internal/engine/network"
@@ -26,6 +27,7 @@ const (
 
 // Shell is one running shell: a filesystem, and the state kept between commands.
 type Shell struct {
+	clock   *clock.Clock
 	fs      filesystem.FS
 	vars    map[string]string
 	funcs   map[string]*List
@@ -83,8 +85,13 @@ const (
 )
 
 func New(fs filesystem.FS, switchUser func(name, password string) error) *Shell {
+	return NewWithClock(fs, switchUser, clock.New())
+}
+
+func NewWithClock(fs filesystem.FS, switchUser func(name, password string) error, c *clock.Clock) *Shell {
 	sh := &Shell{fs: fs, vars: map[string]string{commands.EnvPath: commands.DefaultPath}, funcs: map[string]*List{}, user: fs.Identity(), SwitchUser: switchUser, ctx: context.Background()}
-	sh.procHandler = proc.NewTable()
+	sh.clock = c
+	sh.procHandler = proc.NewTableWithClock(c)
 	sh.proc = sh.procHandler.Attach(1, fs.Identity(), "glass")
 	sh.pid = sh.proc.PID
 	return sh
@@ -434,6 +441,7 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 	}
 	ctx := &commands.Context{
 		Ctx:             sh.ctx,
+		Clock:           sh.clock,
 		VFS:             viewFor(sh.fs, fds),
 		Fds:             fds,
 		Stdin:           guard.WrapReader(fds.Stdin()),

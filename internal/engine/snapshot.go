@@ -20,7 +20,7 @@ type snapshot struct {
 	History []historyRecord   `json:"history"`
 	User    string            `json:"user,omitempty"`
 	// Clock is how far `date -s` moved the shell's clock, in nanoseconds, and
-	// Zone/ZoneOffset is the host zone it was saved in — a shared session
+	// Zone/ZoneOffset is the captured default zone — a shared session
 	// shows the same times to whoever opens it. TZ rides along in Env.
 	Clock      int64  `json:"clock_offset,omitempty"`
 	Zone       string `json:"zone,omitempty"`
@@ -66,9 +66,9 @@ func (s *Session) Snapshot() ([]byte, error) {
 		Env:     s.shell.Vars(),
 		History: history,
 		User:    s.User(),
-		Clock:   int64(clock.Offset()),
+		Clock:   int64(s.clock.Offset()),
 	}
-	snap.Zone, snap.ZoneOffset = clock.Local()
+	snap.Zone, snap.ZoneOffset = s.clock.Local()
 	return json.Marshal(snap)
 }
 
@@ -81,12 +81,12 @@ func LoadSession(data []byte) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	session := newSession(vfs.FromRoot(root, snap.Cwd))
-
-	clock.SetOffset(time.Duration(snap.Clock))
+	c := clock.New()
+	c.SetOffset(time.Duration(snap.Clock))
 	if snap.Zone != "" {
-		clock.SetLocal(snap.Zone, snap.ZoneOffset)
+		c.SetLocal(snap.Zone, snap.ZoneOffset)
 	}
+	session := newSession(vfs.FromRootWithClock(root, snap.Cwd, c), c)
 
 	if snap.User != "" {
 		session.SetUser(snap.User)

@@ -7,7 +7,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"glass/internal/engine/clock"
 	"glass/internal/engine/filesystem"
 )
 
@@ -94,7 +93,7 @@ func (ls Ls) Run(ctx *Context, args []string) int {
 	}
 
 	tw := tabwriter.NewWriter(ctx.Stdout, 0, 4, 1, ' ', 0)
-	now := clock.Now()
+	now := ctx.Clock.In(ctx.Env["TZ"])
 	for _, row := range rows {
 		if inum {
 			fmt.Fprintf(tw, "%d\t", row.info.Ino)
