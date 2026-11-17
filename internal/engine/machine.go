@@ -12,6 +12,7 @@ import (
 	"glass/internal/engine/network"
 	"glass/internal/engine/shell"
 	"glass/internal/engine/stream"
+	"glass/internal/engine/systemd"
 	"glass/internal/engine/vfs"
 	"glass/internal/engine/wasi"
 )
@@ -135,6 +136,10 @@ func (m *Machine) Start() error {
 
 // wireBoot installs boot-scoped resources; caller holds op and mu.
 func (m *Machine) wireBoot() {
+	if _, ok := m.session.tree(); ok {
+		sh := m.session.shell
+		sh.Services = systemd.NewManager(sh.Processes(), sh.PrepareServiceCommand)
+	}
 	m.session.shell.SetLifetime(m.ctx)
 	m.session.shell.SetYield(m.tick)
 	m.session.shell.WasiCache = m.wasiCache

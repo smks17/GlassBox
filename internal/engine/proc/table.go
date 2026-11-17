@@ -32,6 +32,13 @@ type Table struct {
 }
 
 func NewTable() *Table { return NewTableWithClock(clock.New()) }
+
+func (t *Table) Init() *Process {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.processes[1]
+}
+
 func NewTableWithClock(c *clock.Clock) *Table {
 	t := &Table{
 		clock:           c,

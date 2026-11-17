@@ -15,6 +15,7 @@ import (
 	"glass/internal/engine/network"
 	"glass/internal/engine/proc"
 	"glass/internal/engine/stream"
+	"glass/internal/engine/systemd"
 	"glass/internal/engine/user"
 	"glass/internal/engine/wasi"
 )
@@ -27,6 +28,7 @@ const (
 
 // Shell is one running shell: a filesystem, and the state kept between commands.
 type Shell struct {
+	Services    *systemd.Manager
 	clock       *clock.Clock
 	lifetime    context.Context
 	endLifetime context.CancelFunc
@@ -104,6 +106,8 @@ func NewWithClock(fs filesystem.FS, switchUser func(name, password string) error
 }
 
 func (sh *Shell) Vars() map[string]string { return sh.vars }
+
+func (sh *Shell) Processes() *proc.Table { return sh.procHandler }
 
 func (sh *Shell) SetVars(vars map[string]string) { sh.vars = vars }
 
@@ -464,6 +468,9 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 		JobProcessGroup: sh.jobProcessGroup,
 		Network:         sh.Network,
 		WasiCache:       sh.WasiCache,
+	}
+	if sh.Services != nil {
+		ctx.Services = sh.Services.Control(ctx.VFS)
 	}
 	if sh.AuthorizeSudo != nil {
 		ctx.RunSudo = func(target string, args []string, readPassword func() (string, error)) int {
