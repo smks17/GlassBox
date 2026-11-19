@@ -3,7 +3,6 @@ package systemd
 import (
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +18,7 @@ type Manager struct {
 	table   *proc.Table
 	active  map[string]runningService
 	prepare PrepareCommand
+	journal journal
 }
 
 type runningService struct {
@@ -29,9 +29,14 @@ type runningService struct {
 // PrepareCommand resolves ExecStart before the manager creates its process.
 type PrepareCommand func(filesystem.FS, []string) (func(*proc.Process, *stream.FDTable) int, error)
 
-func NewManager(table *proc.Table, prepare PrepareCommand) *Manager {
+func NewManager(table *proc.Table, prepare PrepareCommand, journalFS filesystem.FS) *Manager {
 	table.Init().SetExec("systemd", nil)
-	return &Manager{table: table, active: make(map[string]runningService), prepare: prepare}
+	manager := &Manager{
+		table: table, active: make(map[string]runningService), prepare: prepare,
+		journal: journal{fs: journalFS},
+	}
+	manager.journal.initErr = manager.journal.initialize()
+	return manager
 }
 
 func (m *Manager) runningLocked(name string) (runningService, bool) {
@@ -46,6 +51,10 @@ type control struct {
 
 func (m *Manager) Control(fs filesystem.FS) ServiceControl {
 	return &control{Manager: m, fs: fs}
+}
+
+func (m *control) ReadJournal(name string, lineLimit int) (string, error) {
+	return m.journal.read(name, lineLimit)
 }
 
 func (m *control) Status(name string) (ServiceStatus, error) {
@@ -84,7 +93,9 @@ func (m *control) Start(name string) error {
 	p := group.Spawn(proc.Spec{
 		Parent: m.table.Init(), User: m.fs.Identity(), Name: words[0], Args: words[1:],
 		Run: func(p *proc.Process) int {
-			fds := stream.NewStdTable(strings.NewReader(""), io.Discard, io.Discard)
+			stdout := journalWriter{journal: &m.journal, entry: journalEntry{Unit: name, PID: p.PID}}
+			stderr := journalWriter{journal: &m.journal, entry: journalEntry{Unit: name, PID: p.PID, Stderr: true}}
+			fds := stream.NewStdTable(strings.NewReader(""), stdout, stderr)
 			defer fds.Destroy()
 			return run(p, fds)
 		},

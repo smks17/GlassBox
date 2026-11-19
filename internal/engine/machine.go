@@ -13,6 +13,7 @@ import (
 	"glass/internal/engine/shell"
 	"glass/internal/engine/stream"
 	"glass/internal/engine/systemd"
+	"glass/internal/engine/user"
 	"glass/internal/engine/vfs"
 	"glass/internal/engine/wasi"
 )
@@ -136,9 +137,13 @@ func (m *Machine) Start() error {
 
 // wireBoot installs boot-scoped resources; caller holds op and mu.
 func (m *Machine) wireBoot() {
-	if _, ok := m.session.tree(); ok {
+	if tree, ok := m.session.tree(); ok {
 		sh := m.session.shell
-		sh.Services = systemd.NewManager(sh.Processes(), sh.PrepareServiceCommand)
+		journalFS := tree.Fork().(*vfs.VFS)
+		journalFS.SetIdentity(user.Identity{
+			Name: user.RootName, UID: user.RootUID, Groups: []user.Group{{Name: user.RootGroup}},
+		})
+		sh.Services = systemd.NewManager(sh.Processes(), sh.PrepareServiceCommand, journalFS)
 	}
 	m.session.shell.SetLifetime(m.ctx)
 	m.session.shell.SetYield(m.tick)

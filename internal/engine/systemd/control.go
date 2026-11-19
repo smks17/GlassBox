@@ -12,6 +12,9 @@ type ServiceControl interface {
 	Start(name string) error
 	Stop(name string) error
 	Status(name string) (ServiceStatus, error)
+
+	// ReadJournal returns the last lineLimit lines. A negative limit returns all retained output.
+	ReadJournal(name string, lineLimit int) (string, error)
 }
 
 type ServiceStatus struct {
