@@ -122,14 +122,30 @@ func (f *VFS) Cwd() string { return f.cwd.Path() }
 
 func (f *VFS) RootInode() *Inode { return f.root }
 
+type resolveMode uint8
+
+const (
+	followFinal resolveMode = iota
+	keepFinalLink
+	createMissingFile
+)
+
 func (f *VFS) Resolve(p string) (*Inode, error) {
-	current := f.cwd
+	return f.resolve(f.cwd, p, followFinal, 0)
+}
+
+func (f *VFS) resolve(current *Inode, p string, mode resolveMode, followed int) (*Inode, error) {
 	if strings.HasPrefix(p, "/") {
 		current = f.root
 	}
 
-	for _, seg := range strings.Split(p, "/") {
+	for p != "" {
+		seg, rest, more := strings.Cut(p, "/")
+		p = rest
 		if seg == "" {
+			if !current.IsDir() {
+				return nil, filesystem.ErrNotDir
+			}
 			continue
 		}
 		if !current.IsDir() {
@@ -141,9 +157,32 @@ func (f *VFS) Resolve(p string) (*Inode, error) {
 		}
 		next, ok := current.Lookup(seg)
 		if !ok {
+			if mode == createMissingFile && !more {
+				if err := f.checkPerm(current, filesystem.PermWrite|filesystem.PermExec); err != nil {
+					return nil, err
+				}
+				node := NewFile(nil, OwnedBy(f.id))
+				if err := current.Link(seg, node); err != nil {
+					return nil, err
+				}
+				return node, nil
+			}
 			return nil, filesystem.ErrNotExist
 		}
+		if next.Mode()&filesystem.ModeSymlink != 0 && (mode != keepFinalLink || more) {
+			if followed == 40 {
+				return nil, filesystem.ErrSymlinkLoop
+			}
+			target := string(next.Bytes())
+			if more {
+				target += "/" + rest
+			}
+			return f.resolve(current, target, mode, followed+1)
+		}
 		current = next
+		if more && rest == "" && !current.IsDir() {
+			return nil, filesystem.ErrNotDir
+		}
 	}
 
 	return current, nil
@@ -214,17 +253,13 @@ func (f *VFS) Open(p string, flags stream.OpenFlags) (*stream.File, error) {
 }
 
 func (f *VFS) OpenFor(p string, flags stream.OpenFlags, fds *stream.FDTable) (*stream.File, error) {
-	node, err := f.Resolve(p)
+	mode := followFinal
+	if flags&stream.O_CREATE != 0 {
+		mode = createMissingFile
+	}
+	node, err := f.resolve(f.cwd, p, mode, 0)
 	if err != nil {
-		if !errors.Is(err, filesystem.ErrNotExist) || flags&stream.O_CREATE == 0 {
-			return nil, err
-		}
-		if err := f.Create(p); err != nil {
-			return nil, err
-		}
-		if node, err = f.Resolve(p); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	var need filesystem.PermBits
 	if flags.Readable() {
@@ -330,7 +365,7 @@ func (f *VFS) Create(p string) error { return f.create(p, NewFile(nil, OwnedBy(f
 // are refused, as they are on Linux, because a cycle of them would leave the
 // tree with no way out.
 func (f *VFS) Link(oldPath, newPath string) error {
-	node, err := f.Resolve(oldPath)
+	node, err := f.resolve(f.cwd, oldPath, keepFinalLink, 0)
 	if err != nil {
 		return err
 	}
@@ -521,7 +556,7 @@ func (f *VFS) Copy(src, dst string, recursive bool) error {
 }
 
 func (f *VFS) Move(src, dst string) error {
-	node, err := f.Resolve(src)
+	node, err := f.resolve(f.cwd, src, keepFinalLink, 0)
 	if err != nil {
 		return err
 	}

@@ -16,6 +16,7 @@ var (
 	ErrNotOwner    = errors.New("operation not permitted")
 	ErrLinkDir     = errors.New("hard link not allowed for directory")
 	ErrNotRegular  = errors.New("not a regular file")
+	ErrSymlinkLoop = errors.New("too many levels of symbolic links")
 
 	// These belong to open files, which live in stream; they are the same
 	// values here so a caller can name either package.

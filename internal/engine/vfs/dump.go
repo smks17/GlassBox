@@ -71,7 +71,7 @@ func (d *DumpNode) toInode(byIno map[uint64]*Inode, isRoot bool, depth int, rema
 	*remaining -= 1
 	if d.Ino != 0 {
 		if linked, ok := byIno[d.Ino]; ok {
-			// Only regular files may have additional names. An alias carries
+			// Directories cannot have additional names. An alias carries
 			// no second definition of the inode's metadata or contents.
 			if linked.IsDir() || d.Mode != nil || d.Owner != "" || d.Group != "" || d.Mtime != 0 || len(d.Content) != 0 || len(d.Children) != 0 {
 				return nil, fmt.Errorf("snapshot inode %d has an invalid alias: %w", d.Ino, filesystem.ErrInvalid)
@@ -85,7 +85,8 @@ func (d *DumpNode) toInode(byIno map[uint64]*Inode, isRoot bool, depth int, rema
 	mode, known := filesystem.DefaultFileMode, false
 	if d.Mode != nil {
 		mode, known = *d.Mode, true
-		if mode & ^(filesystem.ModeDirectory|0777) != 0 || (isRoot && !mode.IsDirectory()) {
+		if mode & ^(filesystem.ModeDirectory|filesystem.ModeSymlink|0777) != 0 || (isRoot && !mode.IsDirectory()) ||
+			(mode&filesystem.ModeSymlink != 0 && (mode.IsDirectory() || len(d.Content) == 0 || strings.ContainsRune(string(d.Content), 0))) {
 			return nil, fmt.Errorf("snapshot entry %q has an invalid mode: %w", d.Name, filesystem.ErrInvalid)
 		}
 	}
