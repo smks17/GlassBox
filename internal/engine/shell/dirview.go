@@ -37,8 +37,7 @@ func viewFor(fs filesystem.FS, fds *stream.FDTable) *dirView {
 	return &dirView{FS: fs, fds: fds}
 }
 
-// abs is p as seen from the view's directory. Lexical cleaning is safe here
-// because there are no symlinks: ".." always means the parent.
+// abs leaves path components intact so the filesystem can resolve symlinks before "..".
 func (v *dirView) abs(p string) string {
 	if v.cwd == nil {
 		return p // the filesystem resolves against its own directory
@@ -49,7 +48,7 @@ func (v *dirView) abs(p string) string {
 	if strings.HasPrefix(p, "/") {
 		return p
 	}
-	return path.Join(*v.cwd, p)
+	return strings.TrimRight(*v.cwd, "/") + "/" + p
 }
 
 func (v *dirView) Cwd() string {
@@ -63,7 +62,7 @@ func (v *dirView) Chdir(p string) error {
 	if v.cwd == nil {
 		return v.FS.Chdir(p)
 	}
-	target := v.abs(p)
+	target := path.Clean(v.abs(p))
 	info, err := v.FS.Stat(target)
 	if err != nil {
 		return err
@@ -114,6 +113,28 @@ func (v *dirView) Move(src, dst string) error { return v.FS.Move(v.abs(src), v.a
 func (v *dirView) Link(oldpath, newpath string) error {
 	return v.FS.Link(v.abs(oldpath), v.abs(newpath))
 }
+
+func (v *dirView) Symlink(target, name string) error {
+	if fs, ok := v.FS.(filesystem.SymlinkFS); ok {
+		return fs.Symlink(target, v.abs(name))
+	}
+	return filesystem.ErrNotImplemented
+}
+
+func (v *dirView) Readlink(name string) (string, error) {
+	if fs, ok := v.FS.(filesystem.SymlinkFS); ok {
+		return fs.Readlink(v.abs(name))
+	}
+	return "", filesystem.ErrNotImplemented
+}
+
+func (v *dirView) Lstat(name string) (filesystem.Info, error) {
+	if fs, ok := v.FS.(filesystem.SymlinkFS); ok {
+		return fs.Lstat(v.abs(name))
+	}
+	return v.Stat(name)
+}
+
 func (v *dirView) Touch(p string) error { return v.FS.Touch(v.abs(p)) }
 
 func (v *dirView) Chmod(p string, mode filesystem.FileMode) error {
