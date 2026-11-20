@@ -3,6 +3,7 @@ package systemd
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"glass/internal/engine/filesystem"
@@ -12,11 +13,12 @@ import (
 type Service struct {
 	Description string
 	ExecStart   string
+	WantedBy    []string
 }
 
 // LoadService reads a named service from the simulated system unit directory.
 func LoadService(fs filesystem.FS, name string) (Service, error) {
-	if path.Base(name) != name || !strings.HasSuffix(name, ".service") || name == ".service" {
+	if !validServiceName(name) {
 		return Service{}, fmt.Errorf("%w %q", ErrInvalidServiceName, name)
 	}
 	filename := path.Join(vfs.SystemUnitDir, name)
@@ -31,7 +33,33 @@ func LoadService(fs filesystem.FS, name string) (Service, error) {
 	return service, nil
 }
 
-// ParseService reads the two fields supported by the simulator.
+func validServiceName(name string) bool {
+	return path.Base(name) == name && strings.HasSuffix(name, ".service") && name != ".service" &&
+		!strings.ContainsAny(name, "\x00\r\n")
+}
+
+type UnitFile struct {
+	Name  string
+	State string
+}
+
+// ListUnitFiles returns installed service files and their enablement states in alphabetical order.
+func ListUnitFiles(fs filesystem.FS) ([]UnitFile, error) {
+	entries, err := fs.List(vfs.SystemUnitDir)
+	if err != nil {
+		return nil, err
+	}
+	var files []UnitFile
+	for _, entry := range entries {
+		if entry.Mode&(filesystem.ModeDirectory|filesystem.ModeCharDevice) == 0 && validServiceName(entry.Name) {
+			files = append(files, UnitFile{Name: entry.Name, State: unitFileState(fs, entry.Name)})
+		}
+	}
+	slices.SortFunc(files, func(a, b UnitFile) int { return strings.Compare(a.Name, b.Name) })
+	return files, nil
+}
+
+// ParseService reads the unit, service, and installation settings supported by the simulator.
 func ParseService(text string) (Service, error) {
 	var service Service
 	var section string
@@ -51,6 +79,13 @@ func ParseService(text string) (Service, error) {
 			service.Description = strings.TrimSpace(value)
 		case section == "Service" && key == "ExecStart":
 			service.ExecStart = strings.TrimSpace(value)
+		case section == "Install" && key == "WantedBy":
+			targets := strings.Fields(value)
+			if len(targets) == 0 {
+				service.WantedBy = nil
+			} else {
+				service.WantedBy = append(service.WantedBy, targets...)
+			}
 		}
 	}
 	if service.ExecStart == "" {

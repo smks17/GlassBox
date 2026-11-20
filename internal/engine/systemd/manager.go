@@ -3,6 +3,7 @@ package systemd
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -64,14 +65,40 @@ func (m *control) Status(name string) (ServiceStatus, error) {
 	if !running {
 		return FileStatus(m.fs, name)
 	}
-	// Keep read permissions effective even when reporting the loaded definition.
-	file, err := m.fs.OpenDefault(service.status.Path)
-	if err == nil {
-		file.Close()
-	} else if !errors.Is(err, filesystem.ErrNotExist) {
+	if err := m.checkUnitRead(service.status.Path); err != nil {
 		return ServiceStatus{}, err
 	}
 	return service.status, nil
+}
+
+func (m *control) ListUnits() []ServiceStatus {
+	m.mu.Lock()
+	var statuses []ServiceStatus
+	for name := range m.active {
+		if service, running := m.runningLocked(name); running {
+			statuses = append(statuses, service.status)
+		}
+	}
+	m.mu.Unlock()
+
+	statuses = slices.DeleteFunc(statuses, func(status ServiceStatus) bool {
+		return m.checkUnitRead(status.Path) != nil
+	})
+	slices.SortFunc(statuses, func(a, b ServiceStatus) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return statuses
+}
+
+func (m *control) checkUnitRead(path string) error {
+	// Keep read permissions effective even when reporting the loaded definition.
+	file, err := m.fs.OpenDefault(path)
+	if err == nil {
+		file.Close()
+	} else if !errors.Is(err, filesystem.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (m *control) Start(name string) error {
@@ -126,6 +153,13 @@ func (m *control) Stop(name string) error {
 		return err
 	}
 	return m.stopGroup(service.group, 90*time.Second)
+}
+
+func (m *control) Restart(name string) error {
+	if err := m.Stop(name); err != nil {
+		return err
+	}
+	return m.Start(name)
 }
 
 func (m *Manager) stopGroup(group *proc.Group, timeout time.Duration) error {

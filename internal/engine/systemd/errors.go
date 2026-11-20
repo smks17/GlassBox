@@ -7,4 +7,5 @@ var (
 	ErrUnknownExecutable  = errors.New("unknown executable")
 	ErrInvalidServiceName = errors.New("invalid service name")
 	ErrJournalTooLarge    = errors.New("journal exceeds its size limit")
+	ErrNoInstallTarget    = errors.New("service has no WantedBy=multi-user.target")
 )

@@ -144,8 +144,12 @@ func (j *journal) initialize() error {
 }
 
 func (j *journal) fileSize() (int64, error) {
+	stat := j.fs.Stat
+	if links, ok := j.fs.(filesystem.SymlinkFS); ok {
+		stat = links.Lstat
+	}
 	for _, dir := range journalDirectories {
-		info, err := j.fs.Stat(dir)
+		info, err := stat(dir)
 		if err != nil {
 			return 0, err
 		}
@@ -154,11 +158,11 @@ func (j *journal) fileSize() (int64, error) {
 		}
 	}
 
-	info, err := j.fs.Stat(journalPath)
+	info, err := stat(journalPath)
 	if err != nil {
 		return 0, err
 	}
-	if info.Mode&(filesystem.ModeDirectory|filesystem.ModeCharDevice) != 0 ||
+	if info.Mode&(filesystem.ModeDirectory|filesystem.ModeCharDevice|filesystem.ModeSymlink) != 0 ||
 		info.Owner.Name != user.RootName || info.Mode&0022 != 0 || info.Links != 1 {
 		return 0, fmt.Errorf("%s: %w", journalPath, filesystem.ErrPermission)
 	}
