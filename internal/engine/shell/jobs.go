@@ -20,6 +20,7 @@ type job struct {
 	*proc.Group
 	id         int  // its number, as in "[1] 304"; 0 for a foreground job
 	foreground bool // it started with the terminal: Ctrl-C and Ctrl-Z reach its group
+	lifetime   context.Context
 
 	mu    sync.Mutex
 	procs []*proc.Process // every process it started, in the order they started
@@ -32,7 +33,11 @@ type job struct {
 
 func (sh *Shell) newJob(id int, foreground bool) *job {
 	ended, end := context.WithCancel(context.Background())
-	return &job{Group: sh.procHandler.NewGroup(), id: id, foreground: foreground,
+	var lifetime context.Context
+	if sh.job != nil {
+		lifetime = sh.job.lifetime
+	}
+	return &job{Group: sh.procHandler.NewGroup(), id: id, foreground: foreground, lifetime: lifetime,
 		started: make(chan struct{}), ended: ended, end: end}
 }
 
@@ -118,6 +123,7 @@ func (sh *Shell) runProcess(cmd commands.Command, name string, args []string, fd
 		child := *sh
 		child.fs = newDirView(sh.fs)
 		spec := proc.Spec{
+			Ctx:    j.lifetime,
 			Parent: sh.proc, User: sh.fs.Identity(), Name: name, Args: args,
 			Run: func(p *proc.Process) int {
 				child.proc, child.ctx = p, p.Context()
@@ -294,6 +300,10 @@ func (sh *Shell) ReportFinishedJobs(w io.Writer) {
 // it continues a job and gives it the terminal, then
 // waits for it the way it waits for any foreground job.
 func (sh *Shell) fgBuiltin(args []string, fds *stream.FDTable) int {
+	if sh.job != nil && sh.job.lifetime != nil {
+		fmt.Fprintln(fds.Stderr(), "glass: fg: no controlling terminal")
+		return 1
+	}
 	jobReference := "" // none given: the current job
 	if len(args) > 0 {
 		jobReference = args[0]
