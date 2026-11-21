@@ -113,7 +113,11 @@ func main() {
 				result = false
 			}
 		}()
-		data := make([]byte, args[0].Get("length").Int())
+		length := args[0].Get("byteLength").Float()
+		if length > engine.MaxSnapshotBytes {
+			return false
+		}
+		data := make([]byte, int(length))
 		js.CopyBytesToGo(data, args[0])
 		return app.Restore(data) == nil
 	}))
