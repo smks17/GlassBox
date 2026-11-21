@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/tetratelabs/wazero"
 
@@ -387,25 +388,42 @@ func (app *Machine) User() string {
 	return app.session.User()
 }
 
-// Complete offers the names in the working directory that extend a prefix.
-func (app *Machine) Complete(prefix string) []string {
+// Complete returns command names in command position and paths otherwise.
+// An explicit path is completed in either position.
+func (app *Machine) Complete(prefix string, completeCommandName bool) []string {
 	app.op.Lock()
 	defer app.op.Unlock()
-	return app.session.Complete(prefix)
-}
-
-func (s *Session) Complete(prefix string) []string {
-	entries, err := s.fs.List(s.fs.Cwd())
+	var matches []string
+	directory, name := "", prefix
+	if slash := strings.LastIndexByte(prefix, '/'); slash >= 0 {
+		directory, name = prefix[:slash+1], prefix[slash+1:]
+	} else if completeCommandName {
+		for _, cmd := range commands.All() {
+			if strings.HasPrefix(cmd.Name(), prefix) {
+				matches = append(matches, cmd.Name())
+			}
+		}
+		return matches
+	}
+	lookup := directory
+	if lookup == "" {
+		lookup = app.session.fs.Cwd()
+	}
+	entries, err := app.session.fs.List(lookup)
 	if err != nil {
 		return nil
 	}
-
-	var matches []string
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name, ".") || !strings.HasPrefix(entry.Name, prefix) {
+		if entry.Name == "." || entry.Name == ".." ||
+			(strings.HasPrefix(entry.Name, ".") && !strings.HasPrefix(name, ".")) ||
+			!strings.HasPrefix(entry.Name, name) || strings.ContainsFunc(entry.Name, unicode.IsControl) {
 			continue
 		}
-		matches = append(matches, entry.Name)
+		match := directory + entry.Name
+		if entry.IsDir() {
+			match += "/"
+		}
+		matches = append(matches, match)
 	}
 	return matches
 }

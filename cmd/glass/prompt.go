@@ -24,7 +24,7 @@ func readInputLine(reader *bufio.Reader) (string, error) {
 	return readLine(reader)
 }
 
-func readPrompt(reader *bufio.Reader, prompt string, history []string) (line string, err error) {
+func readPrompt(reader *bufio.Reader, prompt string, history []string, complete func(string) (string, []string)) (line string, err error) {
 	restore, modeErr := beginPromptInput(os.Stdin, os.Stdout)
 	if modeErr != nil {
 		if _, err := fmt.Fprint(os.Stdout, prompt); err != nil {
@@ -59,10 +59,24 @@ func readPrompt(reader *bufio.Reader, prompt string, history []string) (line str
 			line, err = "", fmt.Errorf("restore terminal: %w", restoreErr)
 		}
 	}()
-	return readEditedLine(reader, os.Stdout, prompt, history)
+	return readEditedLine(reader, os.Stdout, prompt, history, complete)
 }
 
-func readEditedLine(reader *bufio.Reader, output io.Writer, prompt string, history []string) (string, error) {
+const (
+	keyEnter        = '\r'
+	keyNewline      = '\n'
+	keyTab          = '\t'
+	keyBackspace    = '\b'
+	keyBackspaceDEL = '\x7f' // Some terminals send DEL for Backspace.
+	keyEscape       = '\x1b'
+	keyCtrlC        = '\x03'
+	keyCtrlD        = '\x04'
+	keyCtrlU        = '\x15'
+	keyCtrlW        = '\x17'
+	keyCtrlZ        = '\x1a'
+)
+
+func readEditedLine(reader *bufio.Reader, output io.Writer, prompt string, history []string, complete func(string) (string, []string)) (string, error) {
 	var line, draft []rune
 	index, cursor, draftCursor := len(history), 0, 0
 	write := func(text string) error {
@@ -85,31 +99,44 @@ func readEditedLine(reader *bufio.Reader, output io.Writer, prompt string, histo
 			return "", err
 		}
 		switch character {
-		case '\r', '\n':
+		case keyTab:
+			if complete == nil || cursor != len(line) {
+				continue
+			}
+			before, matches := complete(string(line))
+			if len(matches) == 1 {
+				line = []rune(before + matches[0])
+				cursor = len(line)
+			} else if len(matches) > 1 {
+				if err := write("\r\n" + strings.Join(matches, "  ") + "\r\n"); err != nil {
+					return "", err
+				}
+			}
+		case keyEnter, keyNewline:
 			return string(line), write("\r\n")
-		case 3:
+		case keyCtrlC:
 			if err := write("^C\r\n"); err != nil {
 				return "", err
 			}
 			return "", errPromptInterrupted
-		case 4:
+		case keyCtrlD:
 			if len(line) == 0 {
 				return "", io.EOF
 			}
 			return string(line), write("\r\n")
-		case 26:
+		case keyCtrlZ:
 			if err := write("^Z\r\n"); err != nil {
 				return "", err
 			}
 			return "", errPromptSuspended
-		case 8, 127:
+		case keyBackspace, keyBackspaceDEL:
 			if cursor > 0 {
 				line = append(line[:cursor-1], line[cursor:]...)
 				cursor--
 			}
-		case 21:
+		case keyCtrlU:
 			line, cursor = nil, 0
-		case 23:
+		case keyCtrlW:
 			tail := append([]rune(nil), line[cursor:]...)
 			line = line[:cursor]
 			for len(line) > 0 && unicode.IsSpace(line[len(line)-1]) {
@@ -120,7 +147,7 @@ func readEditedLine(reader *bufio.Reader, output io.Writer, prompt string, histo
 			}
 			cursor = len(line)
 			line = append(line, tail...)
-		case 27:
+		case keyEscape:
 			key, err := promptEscape(reader)
 			if err != nil {
 				return "", err
@@ -140,6 +167,7 @@ func readEditedLine(reader *bufio.Reader, output io.Writer, prompt string, histo
 					cursor = draftCursor
 				} else {
 					line = []rune(history[index])
+					cursor = len(line)
 				}
 			} else if key == "C" && cursor < len(line) {
 				cursor++
@@ -149,7 +177,7 @@ func readEditedLine(reader *bufio.Reader, output io.Writer, prompt string, histo
 				line = append(line[:cursor], line[cursor+1:]...)
 			}
 		default:
-			if character == '\t' || !unicode.IsControl(character) {
+			if !unicode.IsControl(character) {
 				line = append(line, 0)
 				copy(line[cursor+1:], line[cursor:])
 				line[cursor] = character

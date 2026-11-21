@@ -201,11 +201,7 @@ func repl(app *engine.App, reader *bufio.Reader) int {
 	var history []string
 
 	for {
-		sigil := "$"
-		if app.User() == "root" {
-			sigil = "#"
-		}
-		line, err := readPrompt(reader, fmt.Sprintf("%s%s ", app.User(), sigil), history)
+		line, err := readPrompt(reader, app.Prompt(), history, app.CompleteLine)
 		if err == errPromptInterrupted {
 			status = 130
 			continue
