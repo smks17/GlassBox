@@ -198,14 +198,30 @@ func runFile(app *engine.App, path string, args []string) int {
 
 func repl(app *engine.App, reader *bufio.Reader) int {
 	status := 0
+	var history []string
 
 	for {
 		sigil := "$"
 		if app.User() == "root" {
 			sigil = "#"
 		}
-		fmt.Printf("%s%s ", app.User(), sigil)
-		line, err := readLine(reader)
+		line, err := readPrompt(reader, fmt.Sprintf("%s%s ", app.User(), sigil), history)
+		if err == errPromptInterrupted {
+			status = 130
+			continue
+		}
+		if err == errPromptSuspended {
+			if len(suspendSignals) != 0 {
+				proc, err := os.FindProcess(os.Getpid())
+				if err == nil {
+					err = proc.Signal(suspendSignals[0])
+				}
+				if err != nil {
+					fmt.Fprintln(os.Stderr, engine.ShellName+": suspend:", err)
+				}
+			}
+			continue
+		}
 		if err == io.EOF {
 			fmt.Println()
 			break
@@ -213,6 +229,13 @@ func repl(app *engine.App, reader *bufio.Reader) int {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, engine.ShellName+": read error:", err)
 			return 1
+		}
+
+		if line != "" {
+			history = append(history, line)
+			if len(history) > 500 {
+				history = history[len(history)-500:]
+			}
 		}
 
 		result := interruptible(app, func(ctx context.Context) engine.Result {

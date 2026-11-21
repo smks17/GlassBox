@@ -12,6 +12,11 @@ import (
 var suspendSignals = []os.Signal{syscall.SIGTSTP}
 var passwordSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT}
 
+const (
+	promptGetMode = unix.TIOCGETA
+	promptSetMode = unix.TIOCSETA
+)
+
 func hidePasswordInput() (func() error, error) {
 	fd := int(os.Stdin.Fd())
 	original, err := unix.IoctlGetTermios(fd, unix.TIOCGETA)
