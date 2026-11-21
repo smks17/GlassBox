@@ -25,12 +25,9 @@ export default function Terminal() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [input, setInput] = useState("")
-  // Matches vfs.HomeUser in internal/engine/vfs/vfs.go — only the initial
-  // render before the engine reports the real cwd, so this can drift out of
-  // sync with a Go-side rename without breaking anything, just looking wrong
-  // for one frame.
-  const [cwd, setCwd] = useState("/home/mahdi")
-  const [user, setUser] = useState("mahdi")
+  // Fresh browser sessions log in as root in the WASM entry point.
+  const [cwd, setCwd] = useState("/root")
+  const [user, setUser] = useState("root")
 
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);

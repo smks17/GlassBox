@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"glass/internal/engine"
+	"glass/internal/engine/user"
 	"sync"
 	"syscall/js"
 )
@@ -28,8 +29,12 @@ func fail(app *engine.App, message string) map[string]any {
 }
 
 func main() {
+	app := engine.NewApp()
+	if err := app.Login(user.RootName, user.RootName); err != nil {
+		js.Global().Get("console").Call("error", fmt.Sprintf("GlassBox login: %v", err))
+		return
+	}
 	js.Global().Set("__engineReady", js.ValueOf(true))
-	var app = engine.NewApp()
 	shutdown := sync.OnceValue(func() bool {
 		return app.Close(context.Background()) == nil
 	})
