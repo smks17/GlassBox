@@ -10,7 +10,7 @@ A virtual Linux environment that runs in the browser and CLI. It is a simulation
 - Users and login (`/etc/passwd`, `/etc/shadow`, `su`).
 - A process table with PIDs, signals and `ps`/`kill`.
 - About 20 commands: `cat`, `cd`, `chmod`, `chown`, `cp`, `cut`, `date`, `echo`, `ls`, `mkdir`, `mv`, `rm`, `wc`, and more. Type `help` to list them.
-- Session save and restore, with an optional Cloudflare Worker backend to store sessions.
+- Session save and restore, with an optional FastAPI backend backed by SQLite.
 - Network feature
 
 ## Try it
@@ -35,7 +35,7 @@ npm install
 npm run dev
 ```
 
-`./deploy.sh` builds the engine, then deploys the Worker in `backend/` and the static site to Cloudflare Pages. It needs `npx wrangler login` first.
+`./deploy.sh` builds the engine and deploys the static site to Cloudflare Pages. It needs `npx wrangler login` first. Run or deploy the Python 3.12 FastAPI backend separately; see [backend/README.md](backend/README.md).
 
 ## Simulated machine runtime
 
@@ -100,7 +100,7 @@ internal/engine/
   proc/       process table and signals
   user/       accounts and passwords
   network/    network and dns
-backend/      Cloudflare Worker that stores sessions
+backend/      FastAPI snapshot service backed by SQLite
 ```
 
 The rule that shapes everything: the engine must never use the host operating system to implement a feature, and it must always compile to WebAssembly.
@@ -110,7 +110,6 @@ The rule that shapes everything: the engine must never use the host operating sy
 - [ ] Run wasm program inside glassBox
 - [ ] Add package and plugin manager
 - [ ] Complete remain engine features inside frontend
-- [ ] Rewrite backend with Python or Go
 - [ ] Unittest
 - [ ] Implement mount
 - [ ] Implement systemd
