@@ -3,16 +3,20 @@ package commands
 import (
 	"context"
 	"fmt"
-	"glass/internal/engine/filesystem"
-	"glass/internal/engine/network"
-	"glass/internal/engine/proc"
-	"glass/internal/engine/stream"
-	"glass/internal/engine/user"
 	"io"
 	"maps"
 	"slices"
 	"strings"
 	"time"
+
+	"glass/internal/engine/clock"
+	"glass/internal/engine/filesystem"
+	"glass/internal/engine/network"
+	"glass/internal/engine/proc"
+	"glass/internal/engine/stream"
+	"glass/internal/engine/systemd"
+	"glass/internal/engine/user"
+	"glass/internal/engine/wasi"
 )
 
 type Command interface {
@@ -29,8 +33,10 @@ type HistoryEntry struct {
 }
 
 type Context struct {
-	Ctx context.Context
-	VFS filesystem.FS
+	Services systemd.ServiceControl
+	Clock    *clock.Clock
+	Ctx      context.Context
+	VFS      filesystem.FS
 
 	// Fds is the process's descriptor table. Stdin, Stdout and Stderr
 	Fds *stream.FDTable
@@ -41,8 +47,10 @@ type Context struct {
 	Env     map[string]string
 	History []HistoryEntry
 
-	User       user.Identity
-	SwitchUser func(name, password string) error
+	User         user.Identity
+	SwitchUser   func(name, password string) error
+	RunSudo      func(target string, args []string, readPassword func() (string, error)) int
+	ReadPassword func(context.Context, string) (string, error)
 
 	// Proc is the process table and Self the process running this command,
 	// for kill, ps and sleep.
@@ -53,6 +61,9 @@ type Context struct {
 	JobProcessGroup func(jobReference string) (proc.PID, error)
 
 	Network *network.NetworkManager
+
+	// WasiCache keeps compiled WebAssembly programs between runs, or is nil.
+	WasiCache wasi.Cache
 }
 
 // NewSocket is socket(2) for this command: the socket belongs to its process

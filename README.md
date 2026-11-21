@@ -37,6 +37,45 @@ npm run dev
 
 `./deploy.sh` builds the engine and deploys the static site to Cloudflare Pages. It needs `npx wrangler login` first. Run or deploy the Python 3.12 FastAPI backend separately; see [backend/README.md](backend/README.md).
 
+## Simulated machine runtime
+
+The CLI and browser use `internal/engine.Machine` through the compatible `App` API.
+Go hosts can manage an individual machine explicitly:
+
+```go
+machine, err := engine.NewMachine("lab-a")
+if err != nil { return err }
+if err := machine.Start(); err != nil { return err }
+result := machine.Execute("echo hello > greeting")
+_ = result
+if err := machine.Stop(ctx); err != nil { return err }
+if err := machine.Start(); err != nil { return err } // greeting still exists
+```
+
+A restart preserves files, identity, and virtual clock settings, and creates a fresh
+shell, process table, and loopback network. Shell variables, history, working directory,
+login identity, external interfaces, and published ports reset. Reattach external
+networking after each boot. Machine IDs are assigned by the caller; uniqueness is
+not enforced across instances.
+
+`Stop(ctx)` cancels machine work and waits for actual workers and network cleanup.
+A timeout leaves the machine `stopping` until cleanup finishes; another `Stop` can
+wait again. `Info()` remains available during execution. Commands and session changes
+are serialized per machine; separate machines can execute independently. Snapshot
+restore replaces the session and network after cleaning up old background work.
+Snapshots capture filesystem and shell state, not running processes or machine IDs.
+
+Hosts can share one `wazero.CompilationCache` by passing it to each machine's
+`SetWasiCache` before executing commands. The cache survives restart and restore;
+stop all borrowing machines before closing it. Every program execution gets its
+own wazero runtime and guest memory. NewApp and NewAppOn create an in-memory cache
+owned by their Machine; NewMachine leaves cache setup to its caller. Machine.Close stops the machine and
+closes that default cache. Use Stop for restart and Close for final cleanup.
+Caller-supplied caches remain caller-owned.
+
+The browser exposes `shutdown(): Promise<boolean>` for explicit cleanup. Tab termination
+does not guarantee that cleanup finishes. There is no cluster manager or systemd dependency.
+
 ## Check your changes
 
 ```sh

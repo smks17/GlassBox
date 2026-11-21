@@ -9,12 +9,15 @@ import (
 	"strings"
 	"sync"
 
+	"glass/internal/engine/clock"
 	"glass/internal/engine/commands"
 	"glass/internal/engine/filesystem"
 	"glass/internal/engine/network"
 	"glass/internal/engine/proc"
 	"glass/internal/engine/stream"
+	"glass/internal/engine/systemd"
 	"glass/internal/engine/user"
+	"glass/internal/engine/wasi"
 )
 
 // TODO: Configuring
@@ -25,6 +28,12 @@ const (
 
 // Shell is one running shell: a filesystem, and the state kept between commands.
 type Shell struct {
+	Services    *systemd.Manager
+	clock       *clock.Clock
+	lifetime    context.Context
+	endLifetime context.CancelFunc
+	workers     *sync.WaitGroup
+
 	fs      filesystem.FS
 	vars    map[string]string
 	funcs   map[string]*List
@@ -41,8 +50,10 @@ type Shell struct {
 	ctx  context.Context
 	tick func() // The shell alls it where a loop could otherwise run forever without parking
 
-	user       user.Identity
-	SwitchUser func(name, password string) error
+	user          user.Identity
+	SwitchUser    func(name, password string) error
+	AuthorizeSudo func(caller user.Identity, target string, readPassword func() (string, error)) (user.Identity, error)
+	ReadPassword  func(context.Context, string) (string, error)
 
 	proc               *proc.Process // the shell's process, every command's parent
 	procHandler        *proc.Table
@@ -62,6 +73,10 @@ type Shell struct {
 	// Network is the machine's network, handed to every command. The engine
 	// sets it; a shell without one gives its commands none.
 	Network *network.NetworkManager
+
+	// WasiCache is handed to every command, for wasi to keep compiled
+	// programs in. The host chooses it; nil means none.
+	WasiCache wasi.Cache
 }
 
 type control int
@@ -76,14 +91,23 @@ const (
 )
 
 func New(fs filesystem.FS, switchUser func(name, password string) error) *Shell {
-	sh := &Shell{fs: fs, vars: map[string]string{}, funcs: map[string]*List{}, user: fs.Identity(), SwitchUser: switchUser, ctx: context.Background()}
-	sh.procHandler = proc.NewTable()
+	return NewWithClock(fs, switchUser, clock.New())
+}
+
+func NewWithClock(fs filesystem.FS, switchUser func(name, password string) error, c *clock.Clock) *Shell {
+	sh := &Shell{fs: fs, vars: map[string]string{commands.EnvPath: commands.DefaultPath}, funcs: map[string]*List{}, user: fs.Identity(), SwitchUser: switchUser, ctx: context.Background()}
+	sh.lifetime, sh.endLifetime = context.WithCancel(context.Background())
+	sh.workers = &sync.WaitGroup{}
+	sh.clock = c
+	sh.procHandler = proc.NewTableWithClock(c)
 	sh.proc = sh.procHandler.Attach(1, fs.Identity(), "glass")
 	sh.pid = sh.proc.PID
 	return sh
 }
 
 func (sh *Shell) Vars() map[string]string { return sh.vars }
+
+func (sh *Shell) Processes() *proc.Table { return sh.procHandler }
 
 func (sh *Shell) SetVars(vars map[string]string) { sh.vars = vars }
 
@@ -343,7 +367,9 @@ func (sh *Shell) runPipeline(pipeline *Pipeline, fds *stream.FDTable) int {
 				// fg or bg continues it, so its ends stay open until its process
 				// ends; then the next stage sees EOF, as it would have.
 				if p := child.lastProcess; p != nil && sh.procHandler.Stopped([]*proc.Process{p}) {
+					sh.workers.Add(1)
 					go func() {
+						defer sh.workers.Done()
 						sh.procHandler.Wait([]*proc.Process{p}, false)
 						localFdTable.Destroy()
 					}()
@@ -379,13 +405,34 @@ func (sh *Shell) sub() *Shell {
 func (sh *Shell) runCommand(args []string, fds *stream.FDTable) int {
 	name, rest := args[0], args[1:]
 
+	if strings.Contains(name, "/") {
+		return sh.runExecutable(args, fds)
+	}
+
 	if body, ok := sh.funcs[name]; ok {
 		return sh.callFunc(body, rest, fds)
 	}
 	if status, ok := sh.builtin(name, rest, fds); ok {
 		return status
 	}
+	return sh.runExecutable(args, fds)
+}
+
+// runExecutable deliberately excludes shell functions and builtins.
+func (sh *Shell) runExecutable(args []string, fds *stream.FDTable) int {
+	name, rest := args[0], args[1:]
+	if strings.Contains(name, "/") {
+		cmd, status, err := sh.program(name, fds)
+		if err != nil {
+			fmt.Fprintf(fds.Stderr(), "glass: %s: %s\n", name, execError(err))
+			return status
+		}
+		return sh.runProcess(cmd, name, rest, fds)
+	}
 	if cmd, ok := commands.Lookup(name); ok {
+		return sh.runProcess(cmd, name, rest, fds)
+	}
+	if cmd, ok := sh.lookPath(name, fds); ok {
 		return sh.runProcess(cmd, name, rest, fds)
 	}
 	if sh.Fallback != nil {
@@ -404,8 +451,9 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 	if !sh.proc.Attached() {
 		guard.Process = sh.proc
 	}
-	return &commands.Context{
+	ctx := &commands.Context{
 		Ctx:             sh.ctx,
+		Clock:           sh.clock,
 		VFS:             viewFor(sh.fs, fds),
 		Fds:             fds,
 		Stdin:           guard.WrapReader(fds.Stdin()),
@@ -419,7 +467,20 @@ func (sh *Shell) context(fds *stream.FDTable) *commands.Context {
 		Self:            sh.proc,
 		JobProcessGroup: sh.jobProcessGroup,
 		Network:         sh.Network,
+		WasiCache:       sh.WasiCache,
 	}
+	if sh.Services != nil {
+		ctx.Services = sh.Services.Control(ctx.VFS)
+	}
+	if sh.AuthorizeSudo != nil {
+		ctx.RunSudo = func(target string, args []string, readPassword func() (string, error)) int {
+			return sh.runSudo(target, args, readPassword, fds)
+		}
+	}
+	if sh.job == nil || sh.job.foreground {
+		ctx.ReadPassword = sh.ReadPassword
+	}
+	return ctx
 }
 
 func (sh *Shell) callFunc(body *List, args []string, fds *stream.FDTable) int {
@@ -690,4 +751,19 @@ func (sh *Shell) testTwo(left, op, right string) (bool, error) {
 func (sh *Shell) fail(fds *stream.FDTable, err error) int {
 	fmt.Fprintf(fds.Stderr(), "glass: %v\n", err)
 	return sh.setStatus(2)
+}
+
+// SetLifetime binds all shell work, including background jobs, to one boot.
+// Called only before this shell begins executing.
+func (sh *Shell) SetLifetime(ctx context.Context) {
+	sh.endLifetime()
+	sh.lifetime, sh.endLifetime = context.WithCancel(ctx)
+}
+
+// Close waits for real workers, not just simulated process exit status.
+// The owner must first cancel active foreground execution and wait for Run.
+func (sh *Shell) Close() {
+	sh.endLifetime()
+	sh.procHandler.Close()
+	sh.workers.Wait()
 }

@@ -5,6 +5,12 @@ import (
 	"glass/internal/engine/user"
 )
 
+type SymlinkFS interface {
+	Symlink(target, name string) error
+	Readlink(name string) (string, error)
+	Lstat(name string) (Info, error)
+}
+
 // FS is everything a command needs from a filesystem.
 type FS interface {
 	Cwd() string

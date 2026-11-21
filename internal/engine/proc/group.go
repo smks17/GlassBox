@@ -69,6 +69,14 @@ func (g *Group) WaitStopped(ctx context.Context) bool {
 	return t.waitUntilLocked(ctx, func() bool { return stoppedLocked(g.members) }) == nil
 }
 
+// WaitEmpty waits for every member to exit, up to the caller's deadline.
+func (g *Group) WaitEmpty(ctx context.Context) error {
+	t := g.table
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.waitUntilLocked(ctx, func() bool { return len(g.members) == 0 })
+}
+
 // joinLocked adds p to the group; the first to join leads it.
 func (g *Group) joinLocked(p *Process) {
 	if g.pgid == 0 {

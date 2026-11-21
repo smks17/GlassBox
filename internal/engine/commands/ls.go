@@ -7,7 +7,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"glass/internal/engine/clock"
 	"glass/internal/engine/filesystem"
 )
 
@@ -51,7 +50,19 @@ func (ls Ls) Run(ctx *Context, args []string) int {
 		path = operands[0]
 	}
 
-	entries, err := ctx.VFS.List(path)
+	links, hasLinks := ctx.VFS.(filesystem.SymlinkFS)
+	var entries []filesystem.Info
+	if hasLinks {
+		if entry, err := links.Lstat(path); err == nil && entry.Mode&filesystem.ModeSymlink != 0 {
+			if target, err := ctx.VFS.Stat(path); long || err != nil || !target.IsDir() {
+				entries = []filesystem.Info{entry}
+			}
+		}
+	}
+	var err error
+	if entries == nil {
+		entries, err = ctx.VFS.List(path)
+	}
 	if err != nil {
 		fmt.Fprintf(ctx.Stderr, "%s: %s: %v\n", ls.Name(), path, err)
 		return 1
@@ -94,14 +105,20 @@ func (ls Ls) Run(ctx *Context, args []string) int {
 	}
 
 	tw := tabwriter.NewWriter(ctx.Stdout, 0, 4, 1, ' ', 0)
-	now := clock.Now()
+	now := ctx.Clock.In(ctx.Env["TZ"])
 	for _, row := range rows {
 		if inum {
 			fmt.Fprintf(tw, "%d\t", row.info.Ino)
 		}
+		name := row.name
+		if hasLinks && row.info.Mode&filesystem.ModeSymlink != 0 {
+			if target, err := links.Readlink(row.info.Path); err == nil {
+				name += " -> " + target
+			}
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			row.info.Mode, row.links(), row.info.Owner.Name, row.info.Owner.Primary(),
-			fmt.Sprintf("%*s", width, row.size()), row.modTime(now), row.name)
+			fmt.Sprintf("%*s", width, row.size()), row.modTime(now), name)
 	}
 	tw.Flush()
 	return 0

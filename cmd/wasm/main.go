@@ -3,8 +3,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"glass/internal/engine"
+	"sync"
 	"syscall/js"
 )
 
@@ -28,6 +30,9 @@ func fail(app *engine.App, message string) map[string]any {
 func main() {
 	js.Global().Set("__engineReady", js.ValueOf(true))
 	var app = engine.NewApp()
+	shutdown := sync.OnceValue(func() bool {
+		return app.Close(context.Background()) == nil
+	})
 	// TODO(stream-io): the engine can already stream output and be cancelled,
 	// but nothing here uses it yet. To connect it:
 	//   - app.SetYield with a function that parks on a MessageChannel, so a
@@ -108,5 +113,18 @@ func main() {
 		return app.Restore(data) == nil
 	}))
 
+	// Explicit shutdown is asynchronous so the browser event loop stays free
+	// while background commands and WebAssembly programs finish cancelling.
+	js.Global().Set("shutdown", js.FuncOf(func(this js.Value, args []js.Value) any {
+		executor := js.FuncOf(func(this js.Value, args []js.Value) any {
+			resolve := args[0]
+			go func() {
+				resolve.Invoke(shutdown())
+			}()
+			return nil
+		})
+		defer executor.Release()
+		return js.Global().Get("Promise").New(executor)
+	}))
 	select {}
 }

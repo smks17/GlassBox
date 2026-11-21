@@ -10,19 +10,17 @@ import (
 
 const sysClassNet = "/sys/class/net"
 
-func (app *App) seedSys() {
-	app.network.OnNewInterface(app.addSysInterface)
-	for _, name := range app.network.Interfaces() {
-		app.addSysInterface(name)
-	}
-}
-
-func (app *App) addSysInterface(name string) {
+func (app *Machine) seedSys() {
 	tree, inMemory := app.session.tree()
 	if !inMemory {
-		return // the real filesystem's /sys is the host's own
+		return
 	}
-	addSysInterface(tree, app.network, name)
+	nm := app.network
+	add := func(name string) { addSysInterface(tree, nm, name) }
+	nm.OnNewInterface(add)
+	for _, name := range nm.Interfaces() {
+		add(name)
+	}
 }
 
 func addSysInterface(tree *vfs.VFS, nm *network.NetworkManager, name string) {

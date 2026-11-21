@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"glass/internal/engine/clock"
 	"glass/internal/engine/user"
 	"strconv"
 	"strings"
@@ -53,7 +52,7 @@ func (date Date) Run(ctx *Context, args []string) int {
 		}
 	}
 
-	shown := clock.Now()
+	shown := ctx.Clock.In(ctx.Env["TZ"])
 	if setting {
 		if ctx.User.Name != user.RootName {
 			fmt.Fprintf(ctx.Stderr, "%s: cannot set date: Operation not permitted\n", date.Name())
@@ -64,7 +63,7 @@ func (date Date) Run(ctx *Context, args []string) int {
 			fmt.Fprintf(ctx.Stderr, "%s: invalid date '%s'\n", date.Name(), value)
 			return 1
 		}
-		clock.Set(set)
+		ctx.Clock.Set(set)
 		shown = set
 	}
 	if utc {

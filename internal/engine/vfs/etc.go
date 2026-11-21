@@ -3,10 +3,23 @@ package vfs
 import (
 	"path"
 
+	"glass/internal/engine/cron"
 	"glass/internal/engine/filesystem"
 	"glass/internal/engine/network"
 	"glass/internal/engine/user"
 )
+
+const SystemUnitDir = "/etc/systemd/system"
+
+const crondUnit = `[Unit]
+Description=Cron scheduler
+
+[Service]
+ExecStart=crond
+
+[Install]
+WantedBy=multi-user.target
+`
 
 func seedEtc(root *Inode) {
 	files := []struct {
@@ -18,6 +31,7 @@ func seedEtc(root *Inode) {
 		{path.Base(user.ShadowPath), user.DefaultShadow, 0600},
 		{path.Base(network.HostsPath), network.DefaultHosts, 0644},
 		{path.Base(network.ConfPath), network.DefaultConf, 0644},
+		{path.Base(cron.SystemCrontabPath), "# * * * * * root command\n", 0644},
 	}
 
 	if !root.IsDir() {
@@ -41,5 +55,23 @@ func seedEtc(root *Inode) {
 			continue
 		}
 		_ = etc.Link(f.name, NewFile([]byte(f.content), rootOwner()).setOwner(rootOwner(), f.mode))
+	}
+
+	parent := etc
+	for _, name := range []string{path.Base(path.Dir(SystemUnitDir)), path.Base(SystemUnitDir)} {
+		dir, exists := parent.Lookup(name)
+		if !exists {
+			dir = NewDir(rootOwner())
+			if err := parent.Link(name, dir); err != nil {
+				return
+			}
+		}
+		if !dir.IsDir() {
+			return
+		}
+		parent = dir
+	}
+	if _, exists := parent.Lookup("crond.service"); !exists {
+		_ = parent.Link("crond.service", NewFile([]byte(crondUnit), rootOwner()).setOwner(rootOwner(), 0644))
 	}
 }

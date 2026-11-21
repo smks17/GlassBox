@@ -14,6 +14,7 @@ declare global {
     upload?: (path: string, data: Uint8Array) => ExecResult;
     snapshot?: () => Uint8Array | null;
     loadSession?: (data: Uint8Array) => boolean;
+    shutdown?: () => Promise<boolean>;
     __engineReady?: boolean;
   }
 }
@@ -92,4 +93,12 @@ export function loadSession(data: Uint8Array): boolean {
     throw new Error("loadSession() called before the engine finished loading");
   }
   return window.loadSession(data);
+}
+
+// Hosts may explicitly release machine resources before discarding the engine.
+export function shutdown(): Promise<boolean> {
+  if (!window.shutdown) {
+    throw new Error("shutdown() called before the engine finished loading");
+  }
+  return window.shutdown();
 }

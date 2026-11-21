@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"glass/internal/engine/clock"
 	"glass/internal/engine/dev"
 	"glass/internal/engine/filesystem"
 	"glass/internal/engine/stream"
@@ -13,37 +14,33 @@ import (
 var _ filesystem.FS = (*VFS)(nil)
 
 type VFS struct {
-	root *Inode
-	cwd  *Inode
-	id   user.Identity
-	db   *user.DB
+	clock *clock.Clock
+	root  *Inode
+	cwd   *Inode
+	id    user.Identity
+	db    *user.DB
 }
 
 func rootOwner() Ownership { return Ownership{User: user.RootName, Group: user.RootGroup} }
 
+func (f *VFS) Clock() *clock.Clock { return f.clock }
+
 func New() *VFS {
-	root := newRoot(rootOwner())
+	return NewWithClock(clock.New())
+}
+
+func NewWithClock(c *clock.Clock) *VFS {
+	root := newRoot(rootOwner()).withClock(c)
+	f := newVFS(root, root, c)
 	seedEtc(root)
 	seedDev(root)
+	seedBin(root)
 
-	f := newVFS(root, root)
 	resident, err := f.db.Resident()
-	residentOwner := rootOwner()
-	if err == nil {
-		residentOwner = OwnedBy(resident)
-	}
 
-	for _, dir := range []string{
-		"books", "club", "projects", "memories", "downloads", "secrets",
-	} {
-		_ = root.Link(dir, NewDir(residentOwner))
-	}
 	_ = root.Link("README.md", NewFile([]byte(
 		"Welcome.\n\nYou are in a terminal that isn't quite real.\nTry: ls, cd, cat\n",
 	), rootOwner()))
-	if club, ok := root.Lookup("club"); ok {
-		club.setOwner(Ownership{User: user.RootName, Group: user.DevGroup}, 0770|filesystem.ModeDirectory)
-	}
 
 	// /home is created as root on the way to the first home under it.
 	for _, id := range f.db.Accounts() {
@@ -86,16 +83,22 @@ func makeHome(root *Inode, id user.Identity, mode filesystem.FileMode) {
 }
 
 func FromRoot(root *Inode, cwd string) *VFS {
+	return FromRootWithClock(root, cwd, clock.New())
+}
+
+func FromRootWithClock(root *Inode, cwd string, c *clock.Clock) *VFS {
+	f := newVFS(root, root, c)
 	seedDev(root) // a snapshot never holds devices, so they are made again
-	f := newVFS(root, root)
+	seedBin(root)
 	if dir, err := f.Resolve(cwd); err == nil && dir.IsDir() {
 		f.cwd = dir
 	}
 	return f
 }
 
-func newVFS(root, cwd *Inode) *VFS {
-	return &VFS{root: root, cwd: cwd, db: user.NewDB(accounts{root: root})}
+func newVFS(root, cwd *Inode, c *clock.Clock) *VFS {
+	root.setClock(c, map[*Inode]bool{})
+	return &VFS{clock: c, root: root, cwd: cwd, db: user.NewDB(accounts{root: root})}
 }
 
 func (f *VFS) UsersDB() *user.DB { return f.db }
@@ -119,14 +122,30 @@ func (f *VFS) Cwd() string { return f.cwd.Path() }
 
 func (f *VFS) RootInode() *Inode { return f.root }
 
+type resolveMode uint8
+
+const (
+	followFinal resolveMode = iota
+	keepFinalLink
+	createMissingFile
+)
+
 func (f *VFS) Resolve(p string) (*Inode, error) {
-	current := f.cwd
+	return f.resolve(f.cwd, p, followFinal, 0)
+}
+
+func (f *VFS) resolve(current *Inode, p string, mode resolveMode, followed int) (*Inode, error) {
 	if strings.HasPrefix(p, "/") {
 		current = f.root
 	}
 
-	for _, seg := range strings.Split(p, "/") {
+	for p != "" {
+		seg, rest, more := strings.Cut(p, "/")
+		p = rest
 		if seg == "" {
+			if !current.IsDir() {
+				return nil, filesystem.ErrNotDir
+			}
 			continue
 		}
 		if !current.IsDir() {
@@ -138,9 +157,32 @@ func (f *VFS) Resolve(p string) (*Inode, error) {
 		}
 		next, ok := current.Lookup(seg)
 		if !ok {
+			if mode == createMissingFile && !more {
+				if err := f.checkPerm(current, filesystem.PermWrite|filesystem.PermExec); err != nil {
+					return nil, err
+				}
+				node := NewFile(nil, OwnedBy(f.id))
+				if err := current.Link(seg, node); err != nil {
+					return nil, err
+				}
+				return node, nil
+			}
 			return nil, filesystem.ErrNotExist
 		}
+		if next.Mode()&filesystem.ModeSymlink != 0 && (mode != keepFinalLink || more) {
+			if followed == 40 {
+				return nil, filesystem.ErrSymlinkLoop
+			}
+			target := string(next.Bytes())
+			if more {
+				target += "/" + rest
+			}
+			return f.resolve(current, target, mode, followed+1)
+		}
 		current = next
+		if more && rest == "" && !current.IsDir() {
+			return nil, filesystem.ErrNotDir
+		}
 	}
 
 	return current, nil
@@ -211,17 +253,13 @@ func (f *VFS) Open(p string, flags stream.OpenFlags) (*stream.File, error) {
 }
 
 func (f *VFS) OpenFor(p string, flags stream.OpenFlags, fds *stream.FDTable) (*stream.File, error) {
-	node, err := f.Resolve(p)
+	mode := followFinal
+	if flags&stream.O_CREATE != 0 {
+		mode = createMissingFile
+	}
+	node, err := f.resolve(f.cwd, p, mode, 0)
 	if err != nil {
-		if !errors.Is(err, filesystem.ErrNotExist) || flags&stream.O_CREATE == 0 {
-			return nil, err
-		}
-		if err := f.Create(p); err != nil {
-			return nil, err
-		}
-		if node, err = f.Resolve(p); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	var need filesystem.PermBits
 	if flags.Readable() {
@@ -327,7 +365,7 @@ func (f *VFS) Create(p string) error { return f.create(p, NewFile(nil, OwnedBy(f
 // are refused, as they are on Linux, because a cycle of them would leave the
 // tree with no way out.
 func (f *VFS) Link(oldPath, newPath string) error {
-	node, err := f.Resolve(oldPath)
+	node, err := f.resolve(f.cwd, oldPath, keepFinalLink, 0)
 	if err != nil {
 		return err
 	}
@@ -518,7 +556,7 @@ func (f *VFS) Copy(src, dst string, recursive bool) error {
 }
 
 func (f *VFS) Move(src, dst string) error {
-	node, err := f.Resolve(src)
+	node, err := f.resolve(f.cwd, src, keepFinalLink, 0)
 	if err != nil {
 		return err
 	}

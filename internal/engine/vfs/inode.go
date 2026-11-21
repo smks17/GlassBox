@@ -48,7 +48,8 @@ func OwnedBy(id user.Identity) Ownership {
 // name is not a property of a file — it is what a directory calls one of the
 // files it points at.
 type Inode struct {
-	ino Ino
+	clock *clock.Clock
+	ino   Ino
 
 	mu      sync.RWMutex
 	mode    filesystem.FileMode // the type bits and the nine permission bits
@@ -73,7 +74,7 @@ func NewFile(content []byte, owner Ownership) *Inode {
 		ino:     allocIno(),
 		mode:    filesystem.DefaultFileMode,
 		owner:   owner,
-		mtime:   clock.Now(),
+		mtime:   time.Now(),
 		content: content,
 	}
 }
@@ -83,7 +84,7 @@ func NewDir(owner Ownership) *Inode {
 		ino:     allocIno(),
 		mode:    filesystem.DefaultDirMode,
 		owner:   owner,
-		mtime:   clock.Now(),
+		mtime:   time.Now(),
 		entries: map[string]*Inode{},
 		nlink:   1, // "."
 	}
@@ -96,7 +97,7 @@ func NewDevice(device dev.Device, owner Ownership, perm filesystem.FileMode) *In
 		ino:    allocIno(),
 		mode:   filesystem.ModeCharDevice | perm&0777,
 		owner:  owner,
-		mtime:  clock.Now(),
+		mtime:  time.Now(),
 		device: device,
 	}
 }
@@ -173,7 +174,7 @@ func (node *Inode) Touch() {
 }
 
 // touch is Touch for a caller already holding the lock.
-func (node *Inode) touch() { node.mtime = clock.Now() }
+func (node *Inode) touch() { node.mtime = node.clock.Now() }
 
 func (node *Inode) setOwner(owner Ownership, mode filesystem.FileMode) *Inode {
 	node.lock(func() { node.owner, node.mode = owner, mode })
@@ -315,6 +316,10 @@ func (dir *Inode) Link(name string, child *Inode) error {
 		return filesystem.ErrExists
 	}
 
+	if child.clock == nil && dir.clock != nil {
+		child.clock = dir.clock
+		child.mtime = dir.clock.Now()
+	}
 	dir.entries[name] = child
 	child.nlink++
 	if child.mode.IsDirectory() {
@@ -406,15 +411,36 @@ func (node *Inode) Walk(path string, do func(path string, n *Inode) error) error
 func (node *Inode) Clone() *Inode {
 	owner, mode := node.meta()
 	if node.device != nil {
-		return NewDevice(node.device, owner, mode)
+		return NewDevice(node.device, owner, mode).withClock(node.clock)
 	}
 	if !mode.IsDirectory() {
-		return NewFile(node.Bytes(), owner).setOwner(owner, mode)
+		return NewFile(node.Bytes(), owner).setOwner(owner, mode).withClock(node.clock)
 	}
 
-	clone := NewDir(owner).setOwner(owner, mode)
+	clone := NewDir(owner).setOwner(owner, mode).withClock(node.clock)
 	for _, entry := range node.Entries() {
 		_ = clone.Link(entry.Name, entry.Inode.Clone())
 	}
 	return clone
+}
+
+// setClock binds an existing tree without changing saved timestamps. Hard links
+// are visited only once, and directory parent entries are excluded by Entries.
+func (node *Inode) setClock(c *clock.Clock, seen map[*Inode]bool) {
+	if seen[node] {
+		return
+	}
+	seen[node] = true
+	node.mu.Lock()
+	node.clock = c
+	node.mu.Unlock()
+	for _, e := range node.Entries() {
+		e.Inode.setClock(c, seen)
+	}
+}
+
+// withClock initializes a new inode before it is exposed to other goroutines.
+func (node *Inode) withClock(c *clock.Clock) *Inode {
+	node.clock, node.mtime = c, c.Now()
+	return node
 }

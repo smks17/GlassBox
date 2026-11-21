@@ -29,6 +29,7 @@ const (
 	// File type, where Unix keeps S_IFDIR and S_IFCHR
 	ModeDirectory  FileMode = 1 << 14
 	ModeCharDevice FileMode = 1 << 13
+	ModeSymlink    FileMode = 1 << 12
 )
 
 const (
@@ -51,6 +52,8 @@ func (m FileMode) String() string {
 		b[0] = 'd'
 	case m&ModeCharDevice != 0:
 		b[0] = 'c'
+	case m&ModeSymlink != 0:
+		b[0] = 'l'
 	default:
 		b[0] = '-'
 	}
