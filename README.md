@@ -1,9 +1,28 @@
-# glassBox
+# GlassBox
 
-A virtual Linux environment that runs in the browser and CLI. It is a simulation, not a real operating system: the shell, filesystem, users, pipes and processes are all written in Go.
+A virtual Linux environment you can explore in your browser or run from your terminal. GlassBox brings together a Go shell, simulated filesystem, users, processes, and networking in one portable machine. It runs in WebAssembly in the browser and as a native Go CLI.
 
 
-## What it has
+## Explore a Linux-like machine
+
+<details>
+<summary>Watch the terminal demo</summary>
+
+<img src="assets/terminal-demo.gif" width="560" alt="GlassBox terminal demo showing file creation and background jobs as root">
+
+</details>
+
+Start a shell, inspect the filesystem, create files, change permissions, and connect commands with pipes. GlassBox gives you a hands-on place to explore how familiar Linux concepts fit together, without booting a virtual machine.
+
+```sh
+ls -l /
+echo hello > greeting.txt
+cat greeting.txt
+```
+
+The machine is simulated. Its shell and operating-system behavior run in the GlassBox engine, with an in-memory filesystem by default. The browser runs the same Go engine compiled to WebAssembly.
+
+## Features
 
 - A shell with pipelines, redirection, `if`/loops/`for`, functions, `source`, globbing and job control (`&`, `jobs`, `fg`, `bg`, Ctrl-Z, Ctrl-C).
 - An in-memory filesystem with owners, groups, permission bits, hard links and `/dev` devices.
@@ -11,15 +30,14 @@ A virtual Linux environment that runs in the browser and CLI. It is a simulation
 - A process table with PIDs, signals and `ps`/`kill`.
 - About 20 commands: `cat`, `cd`, `chmod`, `chown`, `cp`, `cut`, `date`, `echo`, `ls`, `mkdir`, `mv`, `rm`, `wc`, and more. Type `help` to list them.
 - Session save and restore, with an optional FastAPI backend backed by SQLite.
-- Network feature
+- Virtual networking and DNS
 
 ## Try it
 
-You need Go 1.25 or newer.
+You need Go 1.25.4 or newer.
 
 ```sh
-go run ./cmd/glass               # an in-memory machine
-go run ./cmd/glass -real         # the same shell on your real disk
+go run ./cmd/glass                 # start the simulated machine
 go run ./cmd/glass script.sh a b   # run a script with arguments
 go run ./cmd/glass --help          # see usage
 ```
@@ -76,6 +94,19 @@ Caller-supplied caches remain caller-owned.
 The browser exposes `shutdown(): Promise<boolean>` for explicit cleanup. Tab termination
 does not guarantee that cleanup finishes. There is no cluster manager or systemd dependency.
 
+## Development workflow
+
+- Branch from `develop`. Use `feature/*` for new features and `bugfix/*` for
+  fixes. Open pull requests back into `develop` and keep each PR focused on
+  one change that can be reviewed on its own.
+- Put simulated Linux behavior in the Go engine. Keep the native CLI and
+  browser bridge thin, and avoid using host resources to implement simulated
+  behavior.
+- Verify the entry points your change affects. If you change the engine,
+  check both the native CLI and WebAssembly builds.
+- Use `main` for releases. After checking the release candidate, merge
+  `develop` into `main` and tag the release commit, for example `v0.1.0`.
+
 ## Check your changes
 
 ```sh
@@ -86,6 +117,30 @@ gofmt -l .                                             # must print nothing
 
 ## How it is organised
 
+```mermaid
+flowchart LR
+    UI[Next.js terminal] --> Bridge[web/lib/wasm-bridge.ts]
+    Bridge --> Browser[cmd/wasm]
+    Browser --> App[engine.App]
+    Native[cmd/glass] --> App
+    App --> Machine[engine.Machine]
+    Machine --> Session[Session and its virtual clock]
+    Machine --> Net[Network manager]
+    Session --> Shell[Shell: lex, parse, expand, execute]
+    Shell --> Commands[commands.Command / Context]
+    Shell --> Runtime[proc / stream]
+    Shell --> Guest[WASI runner]
+    Commands --> FS[filesystem.FS]
+    Guest --> FS
+    FS --> VFS[In-memory VFS]
+    FS -. native mode .-> Disk[osfs: real disk]
+    Commands --> Network[Virtual network]
+    Network -. native adapter .-> Host[hostnet]
+    Network -. boundary violation .-> DNS[Host DNS resolver]
+    UI --> Backend[FastAPI snapshot service]
+    Backend --> SQLite[SQLite]
+```
+
 ```text
 web/          Next.js terminal (presentation only)
 cmd/wasm      thin browser adapter
@@ -95,7 +150,7 @@ internal/engine/
   commands/   one file per command
   filesystem/ filesystem interface
   vfs/        in-memory filesystem
-  ofs/        real disk filesystem
+  osfs/       real disk filesystem (explicit native mode)
   stream/     files, descriptors, pipes
   proc/       process table and signals
   user/       accounts and passwords
@@ -112,8 +167,8 @@ The rule that shapes everything: the engine must never use the host operating sy
 - [ ] Complete remain engine features inside frontend
 - [ ] Unittest
 - [ ] Implement mount
-- [ ] Implement systemd
-- [ ] Resource model (memory, CPU), symlinks, atomic Move.
+- [ ] Extend simulated services and resource limits.
+- [ ] Resource model (memory, CPU), atomic Move.
 
 
 ## License

@@ -32,15 +32,15 @@ go.work.sum
 # .idea/
 # .vscode/
 
-.gitignore
-docs/
 .claude/
-CLAUDE.md
-Project.md
+/AGENTS.md.local
+/CLAUDE.md.local
 */**/*_test.go
 
 # WASM build output
 *.wasm
+
+glass
 
 # Next.js build output and deps
 web/node_modules/
@@ -50,3 +50,9 @@ web/out/
 # Cloudflare Worker local cache/build output
 backend/.wrangler/
 backend/node_modules/
+
+Thirdparty/
+cmd/glass/toolchain/*
+.agents/
+graphify-out
+TODO.md
