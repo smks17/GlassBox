@@ -106,12 +106,7 @@ export default function Terminal() {
   function handleTab() {
     setCompletions([]);
 
-    // Complete only the last word — "cat dem<Tab>" completes "dem".
-    const lastSpace = input.lastIndexOf(" ");
-    const prefix = input.slice(lastSpace + 1);
-    const before = input.slice(0, lastSpace + 1); // "" if there was no space
-
-    const matches = complete(prefix);
+    const { before, matches } = complete(input);
     if (matches.length === 0) return;
     if (matches.length === 1) {
       setInput(before + matches[0]);

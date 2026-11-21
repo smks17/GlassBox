@@ -55,19 +55,19 @@ func main() {
 
 	js.Global().Set("complete", js.FuncOf(func(this js.Value, args []js.Value) (result any) {
 		if len(args) < 1 || args[0].Type() != js.TypeString {
-			return []any{}
+			return map[string]any{"before": "", "matches": []any{}}
 		}
 		defer func() {
 			if recover() != nil {
-				result = []any{}
+				result = map[string]any{"before": "", "matches": []any{}}
 			}
 		}()
-		matches := app.Complete(args[0].String())
+		before, matches := app.CompleteLine(args[0].String())
 		out := make([]any, len(matches))
 		for i, m := range matches {
 			out[i] = m
 		}
-		return out
+		return map[string]any{"before": before, "matches": out}
 	}))
 
 	js.Global().Set("upload", js.FuncOf(func(this js.Value, args []js.Value) (result any) {

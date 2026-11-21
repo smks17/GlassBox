@@ -10,7 +10,7 @@ export interface ExecResult {
 declare global {
   interface Window {
     execute?: (input: string) => ExecResult;
-    complete?: (prefix: string) => string[];
+    complete?: (line: string) => Completion;
     upload?: (path: string, data: Uint8Array) => ExecResult;
     snapshot?: () => Uint8Array | null;
     loadSession?: (data: Uint8Array) => boolean;
@@ -67,11 +67,13 @@ export function execute(input: string): ExecResult {
   return window.execute(input);
 }
 
-export function complete(prefix: string): string[] {
+type Completion = { before: string; matches: string[] };
+
+export function complete(line: string): Completion {
   if (!window.complete) {
     throw new Error("complete() called before the engine finished loading");
   }
-  return window.complete(prefix);
+  return window.complete(line);
 }
 
 export function upload(path: string, data: Uint8Array): ExecResult {
