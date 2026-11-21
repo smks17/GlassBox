@@ -17,6 +17,8 @@ import (
 	"glass/internal/engine/osfs"
 )
 
+const version = "0.1.0"
+
 func main() { os.Exit(run()) }
 
 func run() int {
@@ -24,12 +26,17 @@ func run() int {
 	hostNetwork := flag.Bool("net", false, "give the machine the host's network as eth0")
 	username := flag.String("username", "", "log in as this simulated user")
 	password := flag.String("password", "", "login password (prompted for when omitted with -username)")
+	showVersion := flag.Bool("version", false, "print the GlassBox version and exit")
 	var loads loadList
 	flag.Var(&loads, "load", "copy a host file into the machine before it starts, as `host:path` (repeatable)")
 	var published publishFlags
 	flag.Var(&published, "p", "publish a port: `[hostIP:]hostPort:port` (repeatable; hostIP defaults to 127.0.0.1)")
 	flag.Usage = usage
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("GlassBox v%s\n", version)
+		return 0
+	}
 	credentials := loginOptions{username: strings.TrimSpace(*username), password: *password}
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "password" {

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { snapshot } from "@/lib/wasm-bridge";
 import { saveSession } from "@/lib/backend";
+import { version } from "../package.json";
 import styles from "./SessionControls.module.css";
 
 export default function SessionControls() {
@@ -25,6 +26,7 @@ export default function SessionControls() {
 
   return (
     <div className={styles.controls}>
+      <span>GlassBox v{version}</span>
       <button className={styles.button} onClick={handleSave}>
         save session
       </button>
