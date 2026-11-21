@@ -12,6 +12,8 @@ import (
 	"glass/internal/engine/network"
 	"glass/internal/engine/shell"
 	"glass/internal/engine/stream"
+	"glass/internal/engine/systemd"
+	"glass/internal/engine/user"
 	"glass/internal/engine/vfs"
 	"glass/internal/engine/wasi"
 )
@@ -152,6 +154,19 @@ func (m *Machine) wireBoot() {
 	m.network.Start()
 	m.session.shell.Network = m.network
 	m.seedSys()
+	if tree, ok := m.session.tree(); ok {
+		m.bootServices(tree)
+	}
+}
+
+func (m *Machine) bootServices(tree *vfs.VFS) {
+	sh := m.session.shell
+	systemFS := tree.Fork().(*vfs.VFS)
+	systemFS.SetIdentity(user.Identity{
+		Name: user.RootName, UID: user.RootUID, Groups: []user.Group{{Name: user.RootGroup}},
+	})
+	sh.Services = systemd.NewManager(sh.Processes(), sh.PrepareServiceCommand, systemFS)
+	sh.Services.StartEnabled(systemFS)
 }
 
 func (m *Machine) Stop(ctx context.Context) error {

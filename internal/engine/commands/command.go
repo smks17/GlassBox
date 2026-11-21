@@ -14,6 +14,7 @@ import (
 	"glass/internal/engine/network"
 	"glass/internal/engine/proc"
 	"glass/internal/engine/stream"
+	"glass/internal/engine/systemd"
 	"glass/internal/engine/user"
 	"glass/internal/engine/wasi"
 )
@@ -32,9 +33,10 @@ type HistoryEntry struct {
 }
 
 type Context struct {
-	Clock *clock.Clock
-	Ctx   context.Context
-	VFS   filesystem.FS
+	Services systemd.ServiceControl
+	Clock    *clock.Clock
+	Ctx      context.Context
+	VFS      filesystem.FS
 
 	// Fds is the process's descriptor table. Stdin, Stdout and Stderr
 	Fds *stream.FDTable

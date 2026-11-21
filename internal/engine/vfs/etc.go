@@ -8,6 +8,9 @@ import (
 	"glass/internal/engine/user"
 )
 
+
+const SystemUnitDir = "/etc/systemd/system"
+
 func seedEtc(root *Inode) {
 	files := []struct {
 		name, content string
@@ -41,5 +44,20 @@ func seedEtc(root *Inode) {
 			continue
 		}
 		_ = etc.Link(f.name, NewFile([]byte(f.content), rootOwner()).setOwner(rootOwner(), f.mode))
+	}
+
+	parent := etc
+	for _, name := range []string{path.Base(path.Dir(SystemUnitDir)), path.Base(SystemUnitDir)} {
+		dir, exists := parent.Lookup(name)
+		if !exists {
+			dir = NewDir(rootOwner())
+			if err := parent.Link(name, dir); err != nil {
+				return
+			}
+		}
+		if !dir.IsDir() {
+			return
+		}
+		parent = dir
 	}
 }
