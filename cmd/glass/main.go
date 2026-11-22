@@ -17,8 +17,6 @@ import (
 	"glass/internal/engine/osfs"
 )
 
-const version = "0.1.0"
-
 func main() { os.Exit(run()) }
 
 func run() int {
@@ -34,7 +32,7 @@ func run() int {
 	flag.Usage = usage
 	flag.Parse()
 	if *showVersion {
-		fmt.Printf("GlassBox v%s\n", version)
+		fmt.Printf("GlassBox v%s\n", engine.AppVersion)
 		return 0
 	}
 	credentials := loginOptions{username: strings.TrimSpace(*username), password: *password}

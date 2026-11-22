@@ -46,10 +46,11 @@ export default function Terminal() {
         if (sessionId) {
           try {
             const bytes = await fetchSession(sessionId);
-            loadSession(bytes);
-            const res = execute("pwd");
-            setCwd(res.stdout.trim());
-            setUser(res.user);
+            if (loadSession(bytes)) {
+              const res = execute("pwd");
+              setCwd(res.stdout.trim());
+              setUser(res.user);
+            }
           } catch {
             // Bad or missing link: fall back to the fresh session already
             // running rather than blocking the terminal from loading.

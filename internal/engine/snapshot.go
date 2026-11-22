@@ -13,12 +13,27 @@ import (
 // TODO: Implement this
 var ErrRealFilesystem = errors.New("this session runs on the real filesystem")
 
+// MaxSnapshotBytes limits the size of the encoded snapshot JSON.
+const MaxSnapshotBytes = 16 << 20
+
+// The first release saved snapshots without recording its version.
+var legacySnapshotVersion = Version{Major: 0, Minor: 1, Patch: 0}
+
+// Raise this when a release can no longer read earlier snapshots.
+var oldestCompatibleSnapshotVersion = Version{Major: 0, Minor: 1, Patch: 0}
+
+var (
+	ErrSnapshotTooLarge = errors.New("snapshot exceeds 16 MiB")
+	ErrSnapshotVersion  = errors.New("incompatible snapshot app version")
+)
+
 type snapshot struct {
-	Root    *vfs.DumpNode     `json:"root"`
-	Cwd     string            `json:"cwd"`
-	Env     map[string]string `json:"env"`
-	History []historyRecord   `json:"history"`
-	User    string            `json:"user,omitempty"`
+	AppVersion *Version          `json:"version"`
+	Root       *vfs.DumpNode     `json:"root"`
+	Cwd        string            `json:"cwd"`
+	Env        map[string]string `json:"env"`
+	History    []historyRecord   `json:"history"`
+	User       string            `json:"user,omitempty"`
 	// Clock is how far `date -s` moved the shell's clock, in nanoseconds, and
 	// Zone/ZoneOffset is the captured default zone — a shared session
 	// shows the same times to whoever opens it. TZ rides along in Env.
@@ -60,22 +75,42 @@ func (s *Session) Snapshot() ([]byte, error) {
 			history[i].At = entry.At.Unix()
 		}
 	}
+	appVersion := AppVersion
 	snap := snapshot{
-		Root:    tree.RootInode().Dump(""),
-		Cwd:     tree.Cwd(),
-		Env:     s.shell.Vars(),
-		History: history,
-		User:    s.User(),
-		Clock:   int64(s.clock.Offset()),
+		AppVersion: &appVersion,
+		Root:       tree.RootInode().Dump(""),
+		Cwd:        tree.Cwd(),
+		Env:        s.shell.Vars(),
+		History:    history,
+		User:       s.User(),
+		Clock:      int64(s.clock.Offset()),
 	}
 	snap.Zone, snap.ZoneOffset = s.clock.Local()
-	return json.Marshal(snap)
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxSnapshotBytes {
+		return nil, ErrSnapshotTooLarge
+	}
+	return data, nil
+}
+
+func snapshotCompatible(saved, oldest, machine Version) bool {
+	return oldest.Compare(saved) <= 0 && saved.Compare(machine) <= 0
 }
 
 func LoadSession(data []byte) (*Session, error) {
-	var snap snapshot
+	if len(data) > MaxSnapshotBytes {
+		return nil, ErrSnapshotTooLarge
+	}
+	legacyVersion := legacySnapshotVersion
+	snap := snapshot{AppVersion: &legacyVersion}
 	if err := json.Unmarshal(data, &snap); err != nil {
 		return nil, err
+	}
+	if snap.AppVersion == nil || !snapshotCompatible(*snap.AppVersion, oldestCompatibleSnapshotVersion, AppVersion) {
+		return nil, ErrSnapshotVersion
 	}
 	root, err := snap.Root.ToInode()
 	if err != nil {
