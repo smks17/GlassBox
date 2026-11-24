@@ -32,7 +32,7 @@ type snapshot struct {
 	Root       *vfs.DumpNode     `json:"root"`
 	Cwd        string            `json:"cwd"`
 	Env        map[string]string `json:"env"`
-	History    []historyRecord   `json:"history"`
+	History    []historyRecord   `json:"history,omitempty"`
 	User       string            `json:"user,omitempty"`
 	// Clock is how far `date -s` moved the shell's clock, in nanoseconds, and
 	// Zone/ZoneOffset is the captured default zone — a shared session
@@ -63,27 +63,32 @@ func (h *historyRecord) UnmarshalJSON(data []byte) error {
 }
 
 func (s *Session) Snapshot() ([]byte, error) {
+	return s.snapshot(false)
+}
+
+func (s *Session) snapshot(shared bool) ([]byte, error) {
 	tree, inMemory := s.tree()
 	if !inMemory {
 		return nil, ErrRealFilesystem
 	}
 
-	history := make([]historyRecord, len(s.shell.History))
-	for i, entry := range s.shell.History {
-		history[i] = historyRecord{Line: entry.Line}
-		if !entry.At.IsZero() {
-			history[i].At = entry.At.Unix()
-		}
-	}
 	appVersion := AppVersion
 	snap := snapshot{
 		AppVersion: &appVersion,
-		Root:       tree.RootInode().Dump(""),
+		Root:       tree.Dump(shared),
 		Cwd:        tree.Cwd(),
 		Env:        s.shell.Vars(),
-		History:    history,
 		User:       s.User(),
 		Clock:      int64(s.clock.Offset()),
+	}
+	if !shared {
+		snap.History = make([]historyRecord, len(s.shell.History))
+		for i, entry := range s.shell.History {
+			snap.History[i].Line = entry.Line
+			if !entry.At.IsZero() {
+				snap.History[i].At = entry.At.Unix()
+			}
+		}
 	}
 	snap.Zone, snap.ZoneOffset = s.clock.Local()
 	data, err := json.Marshal(snap)
@@ -101,6 +106,10 @@ func snapshotCompatible(saved, oldest, machine Version) bool {
 }
 
 func LoadSession(data []byte) (*Session, error) {
+	return loadSession(data, false)
+}
+
+func loadSession(data []byte, shared bool) (*Session, error) {
 	if len(data) > MaxSnapshotBytes {
 		return nil, ErrSnapshotTooLarge
 	}
@@ -130,6 +139,9 @@ func LoadSession(data []byte) (*Session, error) {
 	if snap.Env != nil {
 		session.shell.SetVars(snap.Env)
 		session.SetUser(session.User())
+	}
+	if shared {
+		return session, nil
 	}
 	history := make([]commands.HistoryEntry, len(snap.History))
 	for i, record := range snap.History {

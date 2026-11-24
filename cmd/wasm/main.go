@@ -95,7 +95,7 @@ func main() {
 				result = js.Null()
 			}
 		}()
-		data, err := app.Snapshot()
+		data, err := app.Snapshot(true)
 		if err != nil {
 			return js.Null()
 		}
@@ -119,7 +119,7 @@ func main() {
 		}
 		data := make([]byte, int(length))
 		js.CopyBytesToGo(data, args[0])
-		return app.Restore(data) == nil
+		return app.Restore(data, true) == nil
 	}))
 
 	// Explicit shutdown is asynchronous so the browser event loop stays free
