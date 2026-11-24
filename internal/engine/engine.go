@@ -80,15 +80,17 @@ func NewAppOn(fsys filesystem.FS) *App {
 	return &App{Machine: m}
 }
 
-func (app *Machine) Snapshot() ([]byte, error) {
+// Snapshot omits command history and redacts password hashes when isShared is true.
+func (app *Machine) Snapshot(isShared bool) ([]byte, error) {
 	app.op.Lock()
 	defer app.op.Unlock()
-	return app.session.Snapshot()
+	return app.session.snapshot(isShared)
 }
 
-func (app *Machine) Restore(data []byte) error {
+// Restore skips command history and service startup when isShared is true.
+func (app *Machine) Restore(data []byte, isShared bool) error {
 	// Loading is side-effect free; a rejected snapshot leaves this boot intact.
-	session, err := LoadSession(data)
+	session, err := loadSession(data, isShared)
 	if err != nil {
 		return err
 	}
@@ -100,7 +102,6 @@ func (app *Machine) Restore(data []byte) error {
 		session.Close()
 		return ErrMachineNotRunning
 	}
-	running := app.state == MachineRunning
 	old, network := app.session, app.network
 	app.mu.Unlock()
 	old.stdout.Close()
@@ -113,8 +114,8 @@ func (app *Machine) Restore(data []byte) error {
 	old.Close()
 	app.mu.Lock()
 	app.session = session
-	if running {
-		app.wireBoot()
+	if app.state == MachineRunning {
+		app.wireBoot(!isShared)
 	}
 	app.mu.Unlock()
 	return nil

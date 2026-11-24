@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"glass/internal/engine/filesystem"
+	"glass/internal/engine/user"
 )
 
 type DumpNode struct {
@@ -28,11 +29,16 @@ const (
 	maxRestoreDepth = 256
 )
 
-func (node *Inode) Dump(name string) *DumpNode {
-	return node.dump(name, map[Ino]bool{})
+// Dump locks accounts with passwords in the exported tree when isShared is true.
+func (f *VFS) Dump(isShared bool) *DumpNode {
+	var shadow *Inode
+	if isShared {
+		shadow, _ = (accounts{root: f.root}).lookup(user.ShadowPath)
+	}
+	return f.root.dump("", map[Ino]bool{}, shadow)
 }
 
-func (node *Inode) dump(name string, written map[Ino]bool) *DumpNode {
+func (node *Inode) dump(name string, written map[Ino]bool, shadow *Inode) *DumpNode {
 	d := &DumpNode{Name: name, Ino: uint64(node.ino)}
 	if written[node.ino] {
 		return d
@@ -42,6 +48,9 @@ func (node *Inode) dump(name string, written map[Ino]bool) *DumpNode {
 	owner, mode := node.meta()
 	d.Mode, d.Owner, d.Group = &mode, owner.User, owner.Group
 	d.Content = node.Bytes()
+	if node == shadow && !mode.IsDirectory() && mode&filesystem.ModeSymlink == 0 {
+		d.Content = lockSharedPasswords(d.Content)
+	}
 	// A zero Time means "unknown"
 	if mtime := node.ModTime(); !mtime.IsZero() {
 		d.Mtime = mtime.Unix()
@@ -54,9 +63,26 @@ func (node *Inode) dump(name string, written map[Ino]bool) *DumpNode {
 		if name == "" && entry.Name == sysDir {
 			continue
 		}
-		d.Children = append(d.Children, entry.Inode.dump(entry.Name, written))
+		d.Children = append(d.Children, entry.Inode.dump(entry.Name, written, shadow))
 	}
 	return d
+}
+
+func lockSharedPasswords(content []byte) []byte {
+	var locked strings.Builder
+	for line := range strings.Lines(string(content)) {
+		name, hash, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if !ok || name == "" {
+			continue
+		}
+		locked.WriteString(name)
+		locked.WriteByte(':')
+		if hash != "" {
+			locked.WriteByte('!')
+		}
+		locked.WriteByte('\n')
+	}
+	return []byte(locked.String())
 }
 
 func (d *DumpNode) ToInode() (*Inode, error) {

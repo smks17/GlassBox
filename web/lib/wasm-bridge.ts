@@ -12,6 +12,7 @@ declare global {
     execute?: (input: string) => ExecResult;
     complete?: (line: string) => Completion;
     upload?: (path: string, data: Uint8Array) => ExecResult;
+    // Browser sharing uses a snapshot without command history or account password hashes.
     snapshot?: () => Uint8Array | null;
     loadSession?: (data: Uint8Array) => boolean;
     shutdown?: () => Promise<boolean>;

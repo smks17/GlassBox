@@ -11,6 +11,7 @@ export default function SessionControls() {
   const [error, setError] = useState<string | null>(null);
 
   async function handleSave() {
+    if (!window.confirm("Anyone with the link can open this session. Files and environment variables may still contain secrets. Share this session?")) return;
     setError(null);
     try {
       const bytes = snapshot();

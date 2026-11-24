@@ -130,13 +130,13 @@ func (m *Machine) Start() error {
 	m.session = sessionOn(m.session.fs, m.session.clock)
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	m.stopped = make(chan struct{})
-	m.wireBoot()
+	m.wireBoot(true)
 	m.state = MachineRunning
 	return nil
 }
 
 // wireBoot installs boot-scoped resources; caller holds op and mu.
-func (m *Machine) wireBoot() {
+func (m *Machine) wireBoot(startServices bool) {
 	m.session.shell.SetLifetime(m.ctx)
 	m.session.shell.SetYield(m.tick)
 	m.session.shell.WasiCache = m.wasiCache
@@ -155,18 +155,20 @@ func (m *Machine) wireBoot() {
 	m.session.shell.Network = m.network
 	m.seedSys()
 	if tree, ok := m.session.tree(); ok {
-		m.bootServices(tree)
+		m.wireServices(tree, startServices)
 	}
 }
 
-func (m *Machine) bootServices(tree *vfs.VFS) {
+func (m *Machine) wireServices(tree *vfs.VFS, startServices bool) {
 	sh := m.session.shell
 	systemFS := tree.Fork().(*vfs.VFS)
 	systemFS.SetIdentity(user.Identity{
 		Name: user.RootName, UID: user.RootUID, Groups: []user.Group{{Name: user.RootGroup}},
 	})
 	sh.Services = systemd.NewManager(sh.Processes(), sh.PrepareServiceCommand, systemFS)
-	sh.Services.StartEnabled(systemFS)
+	if startServices {
+		sh.Services.StartEnabled(systemFS)
+	}
 }
 
 func (m *Machine) Stop(ctx context.Context) error {

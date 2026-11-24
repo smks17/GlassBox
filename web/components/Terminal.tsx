@@ -43,7 +43,7 @@ export default function Terminal() {
     loadEngine()
       .then(async () => {
         const sessionId = new URLSearchParams(window.location.search).get("session");
-        if (sessionId) {
+        if (sessionId && window.confirm("Open this shared session? Only open links from people you trust. Enabled services will stay stopped.")) {
           try {
             const bytes = await fetchSession(sessionId);
             if (loadSession(bytes)) {

@@ -20,6 +20,17 @@ type accounts struct{ root *Inode }
 var _ user.Reader = accounts{}
 
 func (a accounts) ReadRaw(p string) ([]byte, error) {
+	inode, err := a.lookup(p)
+	if err != nil {
+		return nil, err
+	}
+	if inode.IsDir() {
+		return nil, filesystem.ErrIsDir
+	}
+	return inode.Bytes(), nil
+}
+
+func (a accounts) lookup(p string) (*Inode, error) {
 	curr := a.root
 	for seg := range strings.SplitSeq(p, "/") {
 		if seg == "" || seg == "." {
@@ -34,8 +45,5 @@ func (a accounts) ReadRaw(p string) ([]byte, error) {
 		}
 		curr = next
 	}
-	if curr.IsDir() {
-		return nil, filesystem.ErrIsDir
-	}
-	return curr.Bytes(), nil
+	return curr, nil
 }
